@@ -20,6 +20,12 @@ const vidx = createVaultIndex(); // 知识库异步索引：树/搜索/图谱/�
 const { createUpdater } = require("./lib/updater");
 const { createFonts } = require("./lib/fonts");
 
+// 部分 Mac 上 Chromium 的 Metal 后端编译着色器失败（"Function main0 was not found"），窗口一直黑屏不出画面；
+// 默认关掉硬件加速改用软件合成（必须在 app ready 之前调用）。加 --dkv-gpu 启动可恢复显卡加速。
+if (process.platform === "darwin" && !process.argv.includes("--dkv-gpu") && !app.isReady()) {
+  try { app.disableHardwareAcceleration(); } catch { /* ignore */ }
+}
+
 // ---------------- 应用层信息（由 boot/bootstrap.js 提供） ----------------
 // 本文件可能来自安装包内置的 app.asar，也可能来自数据目录 updates/ 里下载的新应用层；
 // 所有资源路径都相对本文件的 __dirname，自然落在当前应用层里。
