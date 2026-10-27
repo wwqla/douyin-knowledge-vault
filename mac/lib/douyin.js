@@ -6,6 +6,7 @@ const COLLECTION_PAGE_URL = "https://www.douyin.com/user/self?showTab=favorite_c
 const COLLECTION_API_URL = "https://www.douyin.com/aweme/v1/web/aweme/listcollection/";
 const COLLECTS_LIST_API_URL = "https://www.douyin.com/aweme/v1/web/collects/list/";
 const COLLECTS_VIDEO_API_URL = "https://www.douyin.com/aweme/v1/web/collects/video/list/";
+const DETAIL_API_URL = "https://www.douyin.com/aweme/v1/web/aweme/detail/";
 const SESSION_COOKIE_NAMES = new Set(["sessionid", "sessionid_ss", "sid_guard"]);
 const AWEME_ID = /^[0-9]{6,30}$/;
 const CHROME_UA =
@@ -41,8 +42,8 @@ const PAGE_HELPERS = `
 `;
 
 /** 生成在抖音页面里执行的脚本（返回 Promise<结果对象>）。kind: favorites | folders | folderVideos */
-function buildFetchScript(kind, { cursor = 0, count = 20, collectsId = "" } = {}) {
-  const args = JSON.stringify({ cursor: Number(cursor) || 0, count: Number(count) || 20, collectsId: String(collectsId || "") });
+function buildFetchScript(kind, { cursor = 0, count = 20, collectsId = "", awemeId = "" } = {}) {
+  const args = JSON.stringify({ cursor: Number(cursor) || 0, count: Number(count) || 20, collectsId: String(collectsId || ""), awemeId: String(awemeId || "") });
   let body;
   if (kind === "favorites") {
     body = `
@@ -83,6 +84,33 @@ function buildFetchScript(kind, { cursor = 0, count = 20, collectsId = "" } = {}
                  cover_url: (c.collects_cover && c.collects_cover.url_list && c.collects_cover.url_list[0]) || '',
                  create_time: Number(c.create_time || 0),
                })) };`;
+  } else if (kind === "detail") {
+    // 单条视频详情（含播放地址）：在已登录的抖音页面里同源请求，页面自带的签名脚本会补上参数；
+    // 用来替代 yt-dlp 的抖音解析（yt-dlp 经常报 "Fresh cookies are needed"）
+    body = `
+      const params = baseParams();
+      params.set('aweme_id', a.awemeId);
+      const r = await readJson(await fetch(${JSON.stringify(DETAIL_API_URL)} + '?' + params.toString(), {
+        method: 'GET', credentials: 'include', headers: {'Content-Type': 'application/json'} }));
+      if (!r.ok) return r;
+      const it = r.data && r.data.aweme_detail;
+      if (!it) return { ok: false, status_code: r.data && r.data.status_code, empty_detail: true };
+      const urls = [];
+      const add = (x) => { if (x && x.url_list) for (const u of x.url_list) if (u && !urls.includes(u)) urls.push(u); };
+      const v = it.video || {};
+      // 只为转写取声音：优先纯音频流，其次码率最低的视频（省流量、下得快），最后才是默认播放地址
+      (v.bit_rate_audio || []).forEach((b) => {
+        const m = b && b.audio_meta; const l = m && m.url_list;
+        if (Array.isArray(l)) add({ url_list: l });
+        else if (l) add({ url_list: [l.main_url, l.backup_url, l.fallback_url].filter(Boolean) });
+      });
+      const audioOnly = urls.length;
+      [...(v.bit_rate || [])].sort((x, y) => Number(x && x.bit_rate || 0) - Number(y && y.bit_rate || 0))
+        .forEach((b) => add(b && b.play_addr));
+      add(v.play_addr); add(v.download_addr);
+      if (!urls.length && it.music) add(it.music.play_url);
+      return { ok: true, item: { ...mapVideo(it), play_urls: urls, audio_only_count: audioOnly,
+               tags: (it.text_extra || []).map((t) => t && t.hashtag_name).filter(Boolean) } };`;
   } else {
     throw new Error("unknown fetch kind: " + kind);
   }

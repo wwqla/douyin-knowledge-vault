@@ -265,7 +265,7 @@ async function loadScheduleStatus() {
     alert.hidden = true;
     const notes = [];
     if (res.selfHeal && res.selfHeal.length) {
-      notes.push(`<b>🛠 系统已自动修复：</b>${res.selfHeal.map((s) => esc(s)).join("<br>")}`);
+      notes.push(`<b>🛠 自动处理记录：</b>${res.selfHeal.map((s) => esc(s)).join("<br>")}`);
     }
     if (task.exists && task.lastRun && task.lastResult !== 0) {
       notes.push(`上次定时运行失败（返回码 ${task.lastResult}，${task.lastRun}）`);
@@ -2143,7 +2143,7 @@ async function loadPipelinePage() {
   alert.hidden = true;
   const notes = [];
   if (res.selfHeal && res.selfHeal.length) {
-    notes.push(`<b>🛠 系统已自动修复：</b>${res.selfHeal.map((s) => esc(s)).join("<br>")}`);
+    notes.push(`<b>🛠 自动处理记录：</b>${res.selfHeal.map((s) => esc(s)).join("<br>")}`);
   }
   if (task.exists && task.lastRun && task.lastResult !== 0) notes.push(`上次定时运行失败（返回码 ${task.lastResult}，${task.lastRun}）`);
   if (res.lock) {
@@ -2172,6 +2172,13 @@ async function loadPipelinePage() {
   }
   updatePauseUi();
 }
+$("pipe-clear-log").addEventListener("click", async () => {
+  logBuf = "";
+  const pipe = $("pipe-log"); if (pipe) pipe.textContent = "";
+  $("log-body").textContent = "";
+  try { await window.api.clearLog(); } catch { /* ignore */ }
+  loadPipelinePage();
+});
 $("pipe-refresh").addEventListener("click", () => { loadPipelinePage(); updatePauseUi(); appendLog("\n==== 已刷新流水线状态 ====\n"); });
 
 /* ================= 暂停 / 继续 / 清理 ================= */

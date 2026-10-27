@@ -54,8 +54,12 @@ def run_item(settings: Settings, db: StateDB, item: Item) -> Item:
         # 1. download
         if stage == "discovered":
             emit("stage", stage="download", url=item.url)
-            info = download.fetch(item.url, settings.media_dir, settings.cookies_from_browser,
-                                  settings.cookies_file)
+            media_file = getattr(settings, "media_file", None)
+            if media_file and Path(media_file).exists():
+                info = download.from_local(Path(media_file), item.url, getattr(settings, "media_meta", None) or {})
+            else:
+                info = download.fetch(item.url, settings.media_dir, settings.cookies_from_browser,
+                                      settings.cookies_file)
             data.update({
                 "realId": info.item_id, "description": info.description, "tags": info.tags,
                 "duration": info.duration, "audio": str(info.audio_path),

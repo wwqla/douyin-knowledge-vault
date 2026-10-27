@@ -29,6 +29,15 @@ def apply_overrides(s, args):
         s.cookies_from_browser = args.cookies_from_browser
     if getattr(args, "asr", None):
         s.asr_engine = args.asr
+    if getattr(args, "media_file", None):
+        s.media_file = Path(args.media_file).expanduser()
+        s.media_meta = {}
+        if getattr(args, "meta", None):
+            import json
+            try:
+                s.media_meta = json.loads(Path(args.meta).expanduser().read_text("utf-8"))
+            except (OSError, ValueError):
+                s.media_meta = {}
     return s
 
 
@@ -155,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("--cookies-from-browser", help="safari | chrome | edge | firefox")
     pp.add_argument("--cookies", help="Netscape cookies.txt (e.g. exported after QR login)")
     pp.add_argument("--asr", choices=ASR_CHOICES)
+    pp.add_argument("--media-file", help="已由应用下载好的视频/音频文件（跳过 yt-dlp）")
+    pp.add_argument("--meta", help="与 --media-file 配套的元数据 JSON（标题、作者、发布时间等）")
     pp.add_argument("--retry-delay", type=float, default=RETRY_DELAY_SECONDS,
                     help="seconds before the single retry; negative disables")
     pp.set_defaults(func=cmd_process)

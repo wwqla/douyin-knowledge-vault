@@ -409,6 +409,54 @@ async function fetchFolders(maxItems = 100) {
   }));
 }
 
+// ---- 抖音视频直接下载（替代 yt-dlp 的抖音解析，它常报 "Fresh cookies are needed"） ----
+// 在已登录的隐藏抖音页面里批量读详情（一次开页面读多条，播放地址几小时内有效），再用同一个会话下载视频文件
+async function fetchDouyinDetails(ids) {
+  const out = {};
+  if (!ids.length) return out;
+  try {
+    await withDouyinPage(async (exec) => {
+      for (const id of ids) {
+        try {
+          const r = await exec(douyin.buildFetchScript("detail", { awemeId: id }));
+          if (r && r.ok && r.item) out[id] = r.item;
+          else douyinDebug(`[detail] ${id} ${JSON.stringify(r).slice(0, 200)}`);
+        } catch (err) { douyinDebug(`[detail] ${id} ${err && err.message}`); }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    });
+  } catch (err) { sendLog(`⚠ 读取抖音视频详情失败：${err && err.message || err}\n`); }
+  return out;
+}
+
+async function downloadDouyinMedia(id, detail) {
+  const dir = path.join(ENGINE_HOME, "media");
+  fs.mkdirSync(dir, { recursive: true });
+  const urls = (detail && detail.play_urls) || [];
+  const nAudio = Number(detail && detail.audio_only_count || 0);
+  for (let k = 0; k < urls.length; k++) {
+    const u = urls[k];
+    const dest = path.join(dir, `Douyin-${id}.${k < nAudio ? "m4a" : "mp4"}`);
+    const tmp = dest + ".download";
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 180000);
+      const res = await douyinSession().fetch(u, {
+        signal: ctl.signal,
+        headers: { Referer: "https://www.douyin.com/", "User-Agent": DOUYIN_UA },
+      });
+      if (!res.ok) { clearTimeout(t); douyinDebug(`[media] ${id} HTTP ${res.status}`); continue; }
+      const buf = Buffer.from(await res.arrayBuffer());
+      clearTimeout(t);
+      if (buf.length < 20 * 1024) { douyinDebug(`[media] ${id} too small ${buf.length}`); continue; }
+      fs.writeFileSync(tmp, buf);
+      fs.renameSync(tmp, dest);
+      return dest;
+    } catch (err) { douyinDebug(`[media] ${id} ${err && err.message}`); try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ } }
+  }
+  return null;
+}
+
 async function fetchFavorites({ collectsId = "", maxItems = 3000, onPage } = {}) {
   const observedAt = new Date().toISOString();
   return withDouyinPage((exec) => douyin.collectPaged({
@@ -455,9 +503,30 @@ function engineInstalled() {
   return fs.existsSync(VENV_PY) && fs.existsSync(path.join(ENGINE_HOME, "venv", "bin", "favvault-worker"));
 }
 
+// 处理组件是安装时拷贝进 venv 的，增量更新不会改到它：每次运行前把随应用更新的 worker 源码同步到
+// ENGINE_HOME/src/worker，并用 PYTHONPATH 让它优先于 venv 里的旧版本（依赖不变时无需重装组件）
+const APP_LAYER_VERSION = (() => { try { return require("./package.json").version; } catch { return ""; } })();
+function workerSrcDir() {
+  const dir = path.join(ENGINE_HOME, "src", "worker");
+  const stamp = path.join(dir, ".app-version");
+  try {
+    const cur = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8").trim() : "";
+    if (cur !== APP_LAYER_VERSION || !fs.existsSync(path.join(dir, "src", "favvault_worker"))) {
+      const src = path.join(ENGINE_SRC, "worker");
+      if (fs.existsSync(src)) {
+        fs.rmSync(path.join(dir, "src"), { recursive: true, force: true });
+        copyTree(src, dir, (p) => !/(__pycache__|\.pytest_cache|\/tests(\/|$))/.test(p));
+        fs.writeFileSync(stamp, APP_LAYER_VERSION);
+      }
+    }
+  } catch (err) { douyinDebug(`[worker-src] ${err && err.message}`); }
+  return path.join(dir, "src");
+}
+
 function workerEnv(s) {
   return {
     ...process.env,
+    PYTHONPATH: workerSrcDir(),
     FAVVAULT_HOME: ENGINE_HOME,
     FAVVAULT_VAULT: s.vaultPath || "",
     FAVVAULT_LLM_BASE_URL: s.llmBaseUrl || "",
@@ -701,6 +770,7 @@ async function runBatch(keys, { label = "处理", scheduled = false } = {}) {
     const ck = await exportCookies();
     if (!ck.loggedIn) sendLog("⚠ 没有检测到抖音登录 Cookie，下载可能失败；建议先到设置页扫码登录\n");
     const store = new st.StateStore(STATE_FILE);
+    const detailCache = {};
     for (let i = 0; i < keys.length; i++) {
       await waitWhilePaused(job, { ...base, done: i, percent: Math.round((i / Math.max(1, total)) * 100) });
       if (job.cancelled) { result.cancelled = true; break; }
@@ -714,6 +784,27 @@ async function runBatch(keys, { label = "处理", scheduled = false } = {}) {
       let doneEv = null;
       let errEv = null;
       const args = ["process", it.url, "--folder", it.folder || "抖音收藏", "--cookies", COOKIES_FILE, "--retry-delay", "30"];
+      // 抖音视频：先用软件里已登录的抖音会话下载好文件，交给 worker（不再依赖 yt-dlp 解析抖音）
+      if (it.aweme_id) {
+        if (!detailCache[it.aweme_id]) {
+          const ahead = [];
+          for (let j = i; j < keys.length && ahead.length < 10; j++) {
+            const x = store.get(keys[j]);
+            if (x && x.aweme_id && !st.DONE.has(x.status) && !detailCache[x.aweme_id]) ahead.push(x.aweme_id);
+          }
+          sendLog("  ↓ 读取视频地址…\n");
+          Object.assign(detailCache, await fetchDouyinDetails(ahead));
+        }
+        const detail = detailCache[it.aweme_id];
+        const file = detail ? await downloadDouyinMedia(it.aweme_id, detail) : null;
+        if (file) {
+          const metaFile = file + ".json";
+          fs.writeFileSync(metaFile, JSON.stringify({ ...detail, play_urls: undefined }));
+          args.push("--media-file", file, "--meta", metaFile);
+        } else {
+          sendLog("  ⚠ 软件内直接下载失败，改用 yt-dlp 再试…\n");
+        }
+      }
       const r = await runWorker(args, {
         onChild: (c) => { job.child = c; },
         onEvent: (ev) => {
@@ -1033,6 +1124,11 @@ ipcMain.handle("videos:add", async (_e, _settings, payload) => {
 });
 function openLogHint() { sendLog("\n==== 处理手动添加的视频 ====\n"); }
 
+ipcMain.handle("log:clear", () => {
+  try { fs.mkdirSync(path.dirname(SCHED_LOG), { recursive: true }); fs.writeFileSync(SCHED_LOG, ""); return { ok: true }; }
+  catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
+
 ipcMain.handle("sync:pause", () => {
   try { fs.mkdirSync(VAR_DIR, { recursive: true }); fs.writeFileSync(PAUSE_FILE, new Date().toISOString()); logSched("PAUSE user"); return { ok: true }; }
   catch (err) { return { ok: false, error: String(err.message || err) }; }
@@ -1204,7 +1300,7 @@ ipcMain.handle("schedule:status", async () => {
     if (fs.existsSync(SCHED_LOG)) {
       const lines = fs.readFileSync(SCHED_LOG, "utf8").split(/\r?\n/).filter((l) => l.trim());
       logTail = lines.slice(-12).join("\n");
-      selfHeal = lines.filter((l) => /RETRY-1|STALE-LOCK-CLEARED/.test(l)).slice(-4).map((l) => l.replace(/^.*?(RETRY-1|STALE-LOCK-CLEARED)/, "$1").slice(0, 140));
+      selfHeal = lines.filter((l) => /RETRY-1|STALE-LOCK-CLEARED/.test(l)).slice(-4).map((l) => l.replace(/^.*?(RETRY-1|STALE-LOCK-CLEARED)/, "$1").replace(/^RETRY-1\s*/, "失败后自动重试过 1 次：").replace(/^STALE-LOCK-CLEARED\s*/, "已清理残留同步锁 ").slice(0, 140));
     }
   } catch { /* ignore */ }
   const isCount = s.processMode === "count" && Number(s.countLimit) > 0;

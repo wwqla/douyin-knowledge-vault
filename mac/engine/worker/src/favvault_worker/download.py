@@ -114,6 +114,39 @@ def fetch(url: str, out_dir: Path, cookies_from_browser: str | None = None,
     )
 
 
+def from_local(path: Path, url: str, meta: dict) -> MediaInfo:
+    """A file the app already downloaded through its logged-in Douyin session (no yt-dlp)."""
+    if not has_audio_stream(path):
+        path.unlink(missing_ok=True)
+        raise Skip("media must contain complete audio stream")
+    item_id = str(meta.get("aweme_id") or path.stem.rsplit("-", 1)[-1])
+    desc = str(meta.get("description") or "").strip()
+    published = None
+    try:
+        ct = int(meta.get("create_time") or 0)
+        if ct > 0:
+            from datetime import datetime
+            published = datetime.fromtimestamp(ct).strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OSError):
+        published = None
+    try:
+        duration = float(meta.get("duration_seconds") or 0) or probe_duration(path)
+    except (TypeError, ValueError):
+        duration = probe_duration(path)
+    return MediaInfo(
+        platform="douyin",
+        item_id=item_id,
+        url=url,
+        title=(desc.splitlines()[0].strip() if desc else "") or item_id,
+        author=(meta.get("author") or None),
+        description=desc or None,
+        published_at=published,
+        duration=duration,
+        tags=[str(t) for t in (meta.get("tags") or []) if t],
+        audio_path=path,
+    )
+
+
 def has_audio_stream(path: Path) -> bool:
     if not tools.ffprobe():
         return True  # cannot verify; let transcription decide

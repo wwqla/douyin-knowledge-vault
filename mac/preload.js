@@ -145,6 +145,7 @@ contextBridge.exposeInMainWorld("api", {
   newArrivals: (settings, payload) => ipcRenderer.invoke("newarrivals:list", settings, payload),
   addVideos: (settings, payload) => ipcRenderer.invoke("videos:add", settings, payload),
   pauseSync: (settings) => ipcRenderer.invoke("sync:pause", settings),
+  clearLog: () => ipcRenderer.invoke("log:clear"),
   resumeSync: (settings) => ipcRenderer.invoke("sync:resume", settings),
   pauseStatus: (settings) => ipcRenderer.invoke("sync:pause-status", settings),
   cleanupMedia: (settings) => ipcRenderer.invoke("cleanup:media", settings),
