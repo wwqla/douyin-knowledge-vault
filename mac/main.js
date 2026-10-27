@@ -400,7 +400,12 @@ async function withDouyinPage(fn) {
     ]);
     if (!/douyin\.com/.test(win.webContents.getURL())) throw new Error("打不开抖音网页，请检查网络后重试");
     await new Promise((r) => setTimeout(r, 2000)); // 等页面初始化签名/风控脚本
-    return await fn((script) => win.webContents.executeJavaScript(script, true));
+    // 页面里的请求偶尔会一直不返回（风控验证、签名脚本卡住），每次最多等 25 秒，免得整条流水线卡死
+    const exec = (script) => Promise.race([
+      win.webContents.executeJavaScript(script, true),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("抖音网页请求超时（25 秒）")), 25000)),
+    ]);
+    return await fn(exec);
   } finally {
     if (!win.isDestroyed()) win.destroy();
   }
@@ -428,7 +433,10 @@ async function fetchDouyinDetails(ids) {
           const r = await exec(douyin.buildFetchScript("detail", { awemeId: id }));
           if (r && r.ok && r.item) out[id] = r.item;
           else douyinDebug(`[detail] ${id} ${JSON.stringify(r).slice(0, 200)}`);
-        } catch (err) { douyinDebug(`[detail] ${id} ${err && err.message}`); }
+        } catch (err) {
+          douyinDebug(`[detail] ${id} ${err && err.message}`);
+          if (/超时/.test(String(err && err.message))) { sendLog("  ⚠ 抖音网页读取超时，改用备用方式\n"); break; }
+        }
         await new Promise((r) => setTimeout(r, 500));
       }
     });
