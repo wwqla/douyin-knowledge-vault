@@ -1,0 +1,59 @@
+name: Mac Publish Incremental Update
+# 只发布应用内增量更新（不构建 DMG）：app-update.asar / app-update.json 在 Linux 上用 mac/build/build-layer.js 构建，
+# 放到分支 layer/mac-v<version> 的 layer/ 目录；本流程校验 sha256/大小后上传到 release mac-v<version>，并更新 mac-latest 通道。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（不带 mac-v 前缀，例如 0.2.2）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      V: ${{ github.event.inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: layer/mac-v${{ github.event.inputs.version }}
+      - name: Verify layer files
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs"), c = require("crypto");
+            const m = JSON.parse(fs.readFileSync("layer/app-update.json", "utf8"));
+            const b = fs.readFileSync("layer/app-update.asar");
+            const sha = c.createHash("sha256").update(b).digest("hex");
+            console.log(JSON.stringify(m, null, 2));
+            if (m.version !== process.env.V) throw new Error("version mismatch " + m.version);
+            if (sha !== m.sha256 || b.length !== m.size) throw new Error(`sha/size mismatch ${sha} ${b.length}`);
+            if (!m.asarUrl.endsWith("/mac-v" + process.env.V + "/app-update.asar")) throw new Error("asarUrl");
+            console.log("verified", sha, b.length);
+          '
+      - name: Upload to release and update mac-latest
+        run: |
+          set -euo pipefail
+          TAG="mac-v$V"
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" layer/app-update.asar layer/app-update.json --clobber
+          gh release view mac-latest >/dev/null 2>&1 || gh release create mac-latest --title "Mac 版增量更新通道（自动维护，请勿下载）" --notes "这个发布只存放最新 Mac 版的 app-update.json，供应用内更新在 GitHub API 不可用时使用。" --prerelease
+          gh release upload mac-latest layer/app-update.json --clobber
+      - name: Check published files
+        run: |
+          set -euo pipefail
+          mkdir -p chk && cd chk
+          gh release download "mac-v$V" -p app-update.asar -p app-update.json
+          gh release download mac-latest -p app-update.json -O latest.json
+          node -e '
+            const fs = require("fs"), c = require("crypto");
+            const m = JSON.parse(fs.readFileSync("app-update.json")), l = JSON.parse(fs.readFileSync("latest.json"));
+            const sha = c.createHash("sha256").update(fs.readFileSync("app-update.asar")).digest("hex");
+            if (sha !== m.sha256 || l.sha256 !== m.sha256 || l.version !== process.env.V) throw new Error("published files inconsistent");
+            console.log("PUBLISHED OK", l.version, sha);
+          '
