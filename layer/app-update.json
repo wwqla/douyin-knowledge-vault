@@ -1,0 +1,12 @@
+{
+  "version": "0.2.2",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "27cb1e67f46aa0ac6a068c5e7c9a806d601d87c94efcb9011f0e58baa203731c",
+  "size": 9894445,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.2/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.2",
+  "notes": "新增 SenseVoice 中文语音识别引擎（更快更准）；修复抖音扫码登录窗口空白、反复弹出「bitbrowser://」打开对话框；新增性能模式，界面更流畅；修复安装弹窗文字看不清",
+  "publishedAt": "2026-10-27T15:33:03.562Z"
+}
