@@ -1,0 +1,12 @@
+{
+  "version": "0.2.13",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "f3c57bfe22859b0a7479ff8b004642cf6c9c7cbc0fbf7fcef60a99e9d6aeb29e",
+  "size": 9942544,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.13/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.13",
+  "notes": "修复处理时卡在「读取视频地址…」不动：抖音网页请求最多等 25 秒，超时自动改用备用方式；含智谱模型和黑屏修复",
+  "publishedAt": "2026-10-27T17:58:55.736Z"
+}
