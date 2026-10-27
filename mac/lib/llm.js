@@ -130,4 +130,21 @@ function buildKbContext(major, notes, maxChars = 40000) {
   return out;
 }
 
-module.exports = { chat, friendlyAIError, llmConfig, parseJsonLoose, CARD_SYSTEM, buildCardPrompt, normalizeCard, buildKbContext };
+// 接口地址换成别家、模型却还是默认 deepseek-chat 时，自动换成该平台的默认模型（否则会报「模型不存在」）
+const PROVIDER_MODELS = [
+  [/bigmodel\.cn|zhipuai/i, "glm-4-flash"],
+  [/dashscope\.aliyuncs\.com/i, "qwen-plus"],
+  [/moonshot\.(cn|ai)/i, "moonshot-v1-8k"],
+  [/siliconflow\.cn/i, "deepseek-ai/DeepSeek-V3"],
+  [/api\.openai\.com/i, "gpt-4o-mini"],
+];
+function defaultModelFor(base) {
+  const hit = PROVIDER_MODELS.find(([re]) => re.test(String(base || "")));
+  return hit ? hit[1] : "";
+}
+function fixModel(base, model) {
+  const m = String(model || "").trim();
+  if (m && m !== "deepseek-chat") return m;
+  return defaultModelFor(base) || m || "deepseek-chat";
+}
+module.exports = { fixModel, defaultModelFor, chat, friendlyAIError, llmConfig, parseJsonLoose, CARD_SYSTEM, buildCardPrompt, normalizeCard, buildKbContext };

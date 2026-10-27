@@ -95,6 +95,7 @@ function loadSettings() {
   s.asrEngine = asr.resolveAsrEngine(raw);
   if (!s.vaultPath) s.vaultPath = DEFAULT_SETTINGS.vaultPath;
   s.schedule = { ...DEFAULT_SETTINGS.schedule, ...(s.schedule || {}) };
+  s.llmModel = llm.fixModel(s.llmBaseUrl, s.llmModel);
   return s;
 }
 
