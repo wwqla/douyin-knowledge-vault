@@ -62,6 +62,9 @@ jobs:
           npx --yes @electron/asar list "$APP/Contents/Resources/app.asar" | grep -E "^/(main.js|preload.js|lib/douyin.js|renderer/mac.js|assets/card-icons/knowledge-book.png)$"
           codesign --verify --deep --strict "$APP" && echo "signature ok"
           ls -la release/*.dmg
+      - name: Smoke test packaged app
+        run: |
+          "release/mac-arm64/抖音知识库.app/Contents/MacOS/抖音知识库" --smoke-test >/tmp/smoke.log 2>&1; rc=$?; grep SMOKE /tmp/smoke.log; exit $rc
       - uses: actions/upload-artifact@v4
         with:
           name: mac-dmg

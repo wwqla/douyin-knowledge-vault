@@ -1231,6 +1231,44 @@ function clearVaultWatchers() {
   vaultWatchers = [];
 }
 
+// ---------------- CI 冒烟测试：--smoke-test 启动窗口、调用一遍主要通道后退出 ----------------
+function runSmokeTest() {
+  const errors = [];
+  const hardStop = setTimeout(() => { console.log("SMOKE TIMEOUT"); app.exit(2); }, 90000);
+  mainWindow.webContents.on("console-message", (_e, level, message) => { if (level >= 3) errors.push(message); });
+  mainWindow.webContents.once("did-finish-load", async () => {
+    await new Promise((r) => setTimeout(r, 4000));
+    try {
+      const out = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const a = window.api, s = await a.getSettings();
+        const r = {};
+        const calls = {
+          stats: () => a.statsOverview(s), tree: () => a.vaultTree(s.vaultPath), sched: () => a.scheduleStatus(s),
+          engine: () => a.engineStatus(), auth: () => a.authStatus(s), cards: () => a.cardsList(s), kb: () => a.distillList(s),
+          fail: () => a.failuresList(s), news: () => a.newArrivals(s, { days: 7 }), weekly: () => a.weeklyStats(s),
+          pause: () => a.pauseStatus(s), cat: () => a.categoriesManage(s, ["frobnicate"]), distill: () => a.distillRun(s, {}),
+          run: () => a.runPipeline(s, ["sync"]), graph: () => a.vaultGraph(s), search: () => a.vaultSearch(s, "x"),
+        };
+        for (const [k, f] of Object.entries(calls)) {
+          try { const v = await f(); r[k] = v && typeof v === "object" ? (v.ok === false ? "ok:false " + (v.error || v.message || "") : "ok") : String(v); }
+          catch (e) { r[k] = "THROW " + e.message; }
+        }
+        r.page = document.querySelector(".nav-item.active") ? document.querySelector(".nav-item.active").textContent.trim() : "none";
+        r.engineOverlay = !!document.getElementById("engine-overlay");
+        return r;
+      })()`, true);
+      console.log("SMOKE RESULT " + JSON.stringify(out));
+      const thrown = Object.entries(out).filter(([, v]) => String(v).startsWith("THROW"));
+      if (errors.length) console.log("SMOKE RENDERER ERRORS " + JSON.stringify(errors));
+      clearTimeout(hardStop);
+      app.exit(thrown.length || errors.length || !out.engineOverlay ? 1 : 0);
+    } catch (err) {
+      console.log("SMOKE FAILED " + (err && err.stack || err));
+      app.exit(1);
+    }
+  });
+}
+
 // ---------------- 启动 ----------------
 if (gotLock) {
   app.whenReady().then(async () => {
@@ -1245,6 +1283,7 @@ if (gotLock) {
     }
     createWindow();
     watchVault(s.vaultPath);
+    if (process.argv.includes("--smoke-test")) runSmokeTest();
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
 
