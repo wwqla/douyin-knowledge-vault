@@ -406,8 +406,11 @@
           <div class="engine-step">
             <div class="engine-step-head"><b>② 语音识别引擎</b><span class="engine-state" id="model-state">—</span></div>
             <div class="asr-choice" id="asr-choice">
-              <label class="asr-opt"><input type="radio" name="asr-engine" value="sensevoice" /> <span><b>SenseVoice</b>（推荐中文，更快更准，约 230 MB）</span></label>
-              <label class="asr-opt"><input type="radio" name="asr-engine" value="whisper" /> <span><b>Whisper large-v3-turbo</b>（多语言，约 1.6 GB）</span></label>
+              <span class="asr-label">识别引擎</span>
+              <select id="asr-select" class="asr-select">
+                <option value="sensevoice">SenseVoice · 推荐中文，更快更准（约 230 MB）</option>
+                <option value="whisper">Whisper large-v3-turbo · 多语言（约 1.5 GB）</option>
+              </select>
             </div>
             <div class="model-row" id="model-row-sensevoice">
               <div class="model-row-head"><span>SenseVoice Small · int8</span><span class="engine-state" id="model-state-sensevoice">—</span></div>

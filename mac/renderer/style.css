@@ -721,7 +721,7 @@ body.skin-light #reader-overlay {
 .chat-input-row input:focus { border-color: rgba(124, 227, 255, 0.6); box-shadow: 0 0 0 3px rgba(124, 227, 255, 0.15), var(--glow-soft); }
 
 /* ---- 设置页 ---- */
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; max-width: 1100px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; max-width: none; width: 100%; }
 /* 界面皮肤面板独占整行：壁纸卡用更宽布局展示，避免撑高同行面板（如定时任务） */
 .settings-grid .skin-panel { grid-column: 1 / -1; }
 .settings-grid .panel label { display: block; margin: 12px 0; font-size: 12px; color: var(--text-2); }
@@ -2208,9 +2208,9 @@ body.skin-light .fs-row .fs-val { color: #0e7490; }
 .font-bar-track { margin-top: 10px; }
 
 /* 语音识别引擎 / 模型 */
-.asr-choice { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; font-size: 13px; }
-.asr-opt { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; }
-.asr-opt input { width: auto; margin: 0; }
+.asr-choice { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; font-size: 13px; }
+.asr-label { flex: none; color: var(--text-2); font-size: 12.5px; }
+.settings-grid .panel select.asr-select { margin-top: 0; flex: 1; max-width: 460px; }
 .model-row { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(124, 227, 255, 0.10); }
 .model-row.current { border-color: rgba(124, 227, 255, 0.45); }
 .model-row-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; margin-bottom: 6px; }
@@ -2328,3 +2328,6 @@ body.skin-light .save-hint { color: #1d4ed8; }
 .update-row > span { color: var(--text-2); }
 .settings-grid small { color: var(--text-2); }
 body.skin-light .settings-grid code { color: #075985; }
+/* 语音识别引擎下拉（浅色皮肤） */
+body.skin-light .settings-grid .panel select { background: rgba(255, 255, 255, 0.75); border-color: rgba(15, 23, 42, 0.16); color: #0f172a; }
+body.skin-light .settings-grid .panel select option { background: #ffffff; color: #0f172a; }

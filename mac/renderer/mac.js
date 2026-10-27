@@ -52,13 +52,14 @@
   function renderModels() {
     const e = engine || {};
     const cur = e.asrEngine || "sensevoice";
-    document.querySelectorAll('input[name="asr-engine"]').forEach((r) => { r.checked = r.value === cur; r.disabled = !!modelBusy; });
+    const sel = $m("asr-select");
+    if (sel) { sel.value = cur; sel.disabled = !!modelBusy; }
     setText("model-state", e.asrReady ? `${ENGINE_NAMES[cur]} 已就绪 ✓` : (e.installed ? `${ENGINE_NAMES[cur]} 未就绪` : "先完成 ①"));
     const models = e.models || {};
     for (const k of ["sensevoice", "whisper"]) {
       const m = models[k] || {};
       const row = $m("model-row-" + k);
-      if (row) row.classList.toggle("current", k === cur);
+      if (row) { row.classList.toggle("current", k === cur); row.hidden = k !== cur && !(m.downloaded); }
       const btn = $m("btn-model-" + k);
       if (modelBusy && modelBusyEngine === k) continue; // 进度由事件更新
       const intelWhisper = k === "whisper" && e.isArm === false;
@@ -250,7 +251,7 @@
     const b = $m("btn-model-" + k);
     if (b) b.addEventListener("click", () => { if (b.dataset.act === "reveal") window.api.engineRevealModels(k); else doModel(k); });
   }
-  document.querySelectorAll('input[name="asr-engine"]').forEach((r) => r.addEventListener("change", () => { if (r.checked) setAsr(r.value); }));
+  $m("asr-select") && $m("asr-select").addEventListener("change", (ev) => setAsr(ev.target.value));
   $m("btn-models-reveal") && $m("btn-models-reveal").addEventListener("click", async () => {
     const r = await window.api.engineRevealModels();
     if (r && !r.ok) toast("打不开文件夹：" + (r.error || ""), true);

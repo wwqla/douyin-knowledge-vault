@@ -1,0 +1,89 @@
+{
+  "name": "douyin-knowledge-mac",
+  "version": "0.2.3",
+  "description": "抖音收藏 → Obsidian 知识库 · macOS 版（扫码采集收藏、本地 Whisper 转写、AI 提炼笔记、知识库浏览）",
+  "main": "boot/bootstrap.js",
+  "private": true,
+  "license": "MIT",
+  "author": "eason",
+  "scripts": {
+    "start": "electron .",
+    "check": "for f in main.js preload.js boot/*.js renderer/*.js lib/*.js test/*.js; do node --check \"$f\" || exit 1; done",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder --mac dmg --arm64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.douyin.knowledge.mac",
+    "productName": "抖音知识库",
+    "copyright": "MIT License",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "boot/**/*",
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "engine/**/*",
+      "!engine/worker/tests{,/**/*}",
+      "!**/__pycache__{,/**/*}",
+      "!**/.pytest_cache{,/**/*}",
+      "!**/*.pyc",
+      "!**/.DS_Store",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "12.0",
+      "extendInfo": {
+        "LSApplicationCategoryType": "public.app-category.productivity",
+        "NSHumanReadableCopyright": "MIT License"
+      }
+    },
+    "dmg": {
+      "title": "抖音知识库 ${version}",
+      "artifactName": "DouyinKnowledgeVault-${version}-mac-${arch}.${ext}",
+      "contents": [
+        {
+          "x": 150,
+          "y": 190
+        },
+        {
+          "x": 410,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 560,
+        "height": 380
+      }
+    },
+    "afterPack": "build/adhoc-sign.js",
+    "electronLanguages": [
+      "zh_CN",
+      "en"
+    ],
+    "compression": "maximum"
+  }
+}
