@@ -2333,3 +2333,10 @@ body.skin-light .settings-grid code { color: #075985; }
 /* 语音识别引擎下拉（浅色皮肤） */
 body.skin-light .settings-grid .panel select { background: rgba(255, 255, 255, 0.75); border-color: rgba(15, 23, 42, 0.16); color: #0f172a; }
 body.skin-light .settings-grid .panel select option { background: #ffffff; color: #0f172a; }
+
+/* 处理组件就绪后折叠成一行，点「管理」展开 */
+.engine-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.engine-summary { font-size: 12px; font-weight: 400; opacity: .7; }
+.engine-toggle { margin-left: auto; }
+.engine-panel.collapsed .engine-body { display: none; }
+.engine-panel.collapsed .panel-title { margin-bottom: 0; }

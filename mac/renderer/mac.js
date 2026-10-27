@@ -15,6 +15,10 @@
   }
   function setText(id, t) { const el = $m(id); if (el) el.textContent = t; }
 
+  let engineExpanded = false;
+  document.addEventListener("click", (ev) => {
+    if (ev.target && ev.target.id === "btn-engine-toggle") { engineExpanded = !engineExpanded; renderEngine(); }
+  });
   function renderEngine() {
     const e = engine || {};
     const badge = $m("engine-badge");
@@ -40,6 +44,17 @@
       }
     }
     renderModels();
+    // 都就绪后折叠成一行（安装/下载中或用户点了「管理」时保持展开）
+    const busy = installBusy || !!modelBusyEngine;
+    const panel = $m("engine-panel");
+    const tg = $m("btn-engine-toggle");
+    if (panel && tg) {
+      tg.hidden = !ready || busy;
+      const collapse = ready && !busy && !engineExpanded;
+      panel.classList.toggle("collapsed", collapse);
+      tg.textContent = collapse ? "管理" : "收起";
+      setText("engine-summary", collapse ? `· ${ENGINE_NAMES[e.asrEngine || "sensevoice"] || ""} 语音识别` : "");
+    }
     // 首次引导浮层
     const ov = $m("engine-overlay");
     if (ov && !ov.hidden && ready) ov.hidden = true;
