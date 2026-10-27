@@ -55,7 +55,8 @@ function appendLog(chunk) {
   body.textContent = logBuf;
   body.scrollTop = body.scrollHeight;
 }
-window.api.onLog(appendLog);
+let distillSink = null;
+window.api.onLog((chunk) => { appendLog(chunk); if (distillSink) distillSink(chunk); });
 
 function openLogPanel() { $("log-panel").hidden = false; }
 $("btn-log-close").addEventListener("click", () => { $("log-panel").hidden = true; });
@@ -1448,7 +1449,7 @@ let chatBusy = false;
 
 async function loadChatSkills() {
   const sel = $("chat-skill");
-  sel.innerHTML = '<option value="">选择知识库分类…</option>';
+  sel.innerHTML = '<option value="">选择技能包或知识库分类…</option>';
   const res = await window.api.distillList(settings);
   const list = res.list || [];
   for (const s of list) {
@@ -1458,7 +1459,7 @@ async function loadChatSkills() {
     sel.appendChild(o);
   }
   sel.disabled = list.length === 0;
-  $("chat-pick-note").textContent = list.length === 0 ? "知识库里还没有笔记，先处理一些收藏" : `${list.length} 个知识库分类可选`;
+  $("chat-pick-note").textContent = list.length === 0 ? "还没有技能包，知识库里也还没有笔记" : `${list.filter((x) => x.engine !== "kb").length} 个技能包 · ${list.filter((x) => x.engine === "kb").length} 个知识库分类可选`;
   if (list.length > 0 && !sel.value) sel.selectedIndex = 1;
 }
 
@@ -1565,8 +1566,11 @@ $("dist-run").addEventListener("click", async () => {
   log.textContent = "";
   const sink = (s) => { log.textContent += s; log.scrollTop = log.scrollHeight; };
   sink("开始蒸馏…\n");
+  distillSink = sink; // 主进程的阶段进度同步显示在这里
   try {
     const res = await window.api.distillRun(settings, sel);
+    distillSink = null;
+    loadChatSkills().catch(() => {});
     if (res.ok) {
       sink(`完成。技能包已保存：${res.path}\n`);
       $("dist-result").textContent = res.content;
@@ -1579,6 +1583,7 @@ $("dist-run").addEventListener("click", async () => {
       sink(`失败：${res.error}\n`);
     }
   } catch (err) {
+    distillSink = null;
     sink(`运行出错：${String(err && err.message || err)}\n`);
   }
 });
@@ -2231,7 +2236,7 @@ $("btn-cleanup-media").addEventListener("click", async () => {
 async function loadSkillsPage() {
   const grid = $("skills-grid");
   const res = await window.api.distillList(settings);
-  const list = res.list || [];
+  const list = (res.list || []).filter((x) => x.engine !== "kb");
   $("skills-note").textContent = list.length ? `共 ${list.length} 个技能 · 仓颉引擎产物可直接被 AI 助手安装调用` : "还没有蒸馏技能，去「知识蒸馏」页蒸馏一个子类";
   grid.innerHTML = "";
   if (!list.length) return;

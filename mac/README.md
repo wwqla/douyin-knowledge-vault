@@ -48,7 +48,7 @@
 
 ## 与 Windows 版的差异
 
-- **知识蒸馏（仓颉七阶段引擎）Mac 版暂未提供**，相关入口会显示“Mac 版暂未提供”。「我的技能」页同理。
+- **知识蒸馏（仓颉七阶段引擎）**：首次蒸馏时自动下载仓颉引擎，技能包保存在 `~/douyin-distill`；「AI 问答」可选技能包或知识库分类。
 - 收藏采集改为应用内置的抖音网页登录窗口完成，不再需要 Playwright / Chrome。
 - 处理引擎来自 [FavVault](https://github.com/wwqla/fav-vault-mac) 的 Python worker（yt-dlp + mlx-whisper + OpenAI 兼容接口）。
 

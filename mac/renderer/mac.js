@@ -318,23 +318,6 @@
     toast("抖音登录成功");
   });
 
-  // ---------- 我的技能：Mac 版暂未提供蒸馏 ----------
-  // eslint-disable-next-line no-global-assign
-  loadSkillsPage = async function () {
-    const grid = $m("skills-grid");
-    const note = $m("skills-note");
-    if (note) note.textContent = "Mac 版暂未提供知识蒸馏（仓颉引擎仅随 Windows 版提供）";
-    if (grid) {
-      grid.innerHTML = `<div class="panel" style="grid-column:1/-1">
-        <div class="panel-title">Mac 版暂未提供</div>
-        <p class="hint" style="margin-top:0">蒸馏技能包需要仓颉七阶段引擎，目前只随 Windows 版内置，Mac 版后续再加。<br/>
-        想基于知识库提问，可以去「AI 问答」直接选择一个知识库分类。</p>
-        <button class="btn" id="skills-go-chat">去 AI 问答</button></div>`;
-      const b = $m("skills-go-chat");
-      if (b) b.addEventListener("click", () => switchPage("distill"));
-    }
-  };
-
   // ---------- 关于与更新（应用内增量更新） ----------
   const fmtMB = (n) => (Number(n) / 1024 / 1024).toFixed(1) + " MB";
   let upd = { info: null, check: null, downloading: false, downloaded: "" };

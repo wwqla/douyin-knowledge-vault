@@ -1530,20 +1530,151 @@ ipcMain.handle("weekly:balance", async () => {
   }
 });
 
-// ---------------- IPC：蒸馏（Mac 版暂未提供）与 AI 问答 ----------------
-const DISTILL_NA = "Mac 版暂未提供知识蒸馏（仓颉引擎仅 Windows 版内置）。可以直接在「AI 问答」里选择知识库分类提问。";
-ipcMain.handle("distill:estimate", () => ({ ok: false, error: DISTILL_NA }));
-ipcMain.handle("distill:run", () => ({ ok: false, error: DISTILL_NA }));
-ipcMain.handle("distill:delete", () => ({ ok: false, error: DISTILL_NA }));
-// AI 问答的“技能”= 知识库大类（kb:<大类>），问答时把该大类笔记摘要作为上下文
+// ---------------- IPC：知识蒸馏（仓颉七阶段）与 AI 问答 ----------------
+// 仓颉引擎（kangarooking/cangjie-skill）首次蒸馏时按需下载到 ENGINE_HOME/cangjie；编译用处理组件的 Python（自动补装 PyYAML）
+const { runCangjieDistill } = require("./lib/cangjie-runner");
+const { downloadFile } = require("./lib/download");
+const CANGJIE_DIR = path.join(ENGINE_HOME, "cangjie");
+const distillRoot = () => loadSettings().distillOutputDir || path.join(os.homedir(), "douyin-distill");
+function runCmd(cmd, args, opts = {}) {
+  return new Promise((resolve) => {
+    let out = "";
+    let child;
+    try { child = spawn(cmd, args, { ...opts }); } catch (err) { resolve({ code: -1, out: String(err.message || err) }); return; }
+    child.stdout && child.stdout.on("data", (c) => (out += String(c)));
+    child.stderr && child.stderr.on("data", (c) => (out += String(c)));
+    child.on("error", (err) => { out += String(err.message || err); });
+    child.on("close", (code) => resolve({ code, out }));
+  });
+}
+async function ensureCangjie(send) {
+  if (!fs.existsSync(VENV_PY)) throw new Error("知识蒸馏需要先在「设置」里一键安装处理组件");
+  if (!fs.existsSync(path.join(CANGJIE_DIR, "SKILL.md")) || !fs.existsSync(path.join(CANGJIE_DIR, "scripts", "cangjie.py"))) {
+    send("  ▶ 首次使用：下载仓颉蒸馏引擎（约 10 MB）…\n");
+    const zip = path.join(ENGINE_HOME, "cangjie.zip");
+    const src = "https://codeload.github.com/kangarooking/cangjie-skill/zip/refs/heads/main";
+    const gh = "https://github.com/kangarooking/cangjie-skill/archive/refs/heads/main.zip";
+    const mirrors = (updateMirrors() && updateMirrors().length ? updateMirrors() : ["https://ghfast.top/"]).map((m) => m.replace(/\/?$/, "/") + gh);
+    let last = -10;
+    const dl = await downloadFile((u, o) => net.fetch(u, o), fs, [src, ...mirrors], zip, {
+      onProgress: (p) => { const mb = Math.floor((p.received || 0) / 1048576); if (mb >= last + 2) { last = mb; send(`    已下载 ${mb} MB\n`); } },
+    });
+    if (!dl.ok) throw new Error("下载仓颉引擎失败：" + dl.error);
+    const tmp = path.join(ENGINE_HOME, "cangjie-unzip");
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.mkdirSync(tmp, { recursive: true });
+    const r = await runCmd("/usr/bin/ditto", ["-x", "-k", zip, tmp]);
+    if (r.code !== 0) throw new Error("解压仓颉引擎失败：" + r.out.slice(0, 300));
+    const inner = fs.readdirSync(tmp).map((n) => path.join(tmp, n)).find((d) => fs.existsSync(path.join(d, "SKILL.md")));
+    if (!inner) throw new Error("仓颉引擎压缩包内容不完整");
+    fs.rmSync(CANGJIE_DIR, { recursive: true, force: true });
+    fs.renameSync(inner, CANGJIE_DIR);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(zip, { force: true });
+    send("  ✓ 仓颉引擎就绪\n");
+  }
+  if ((await runCmd(VENV_PY, ["-c", "import yaml"])).code !== 0) {
+    send("  ▶ 安装 PyYAML…\n");
+    const env = { ...process.env, PATH: `${path.join(ENGINE_HOME, "bin")}:${os.homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ""}` };
+    const idx = ["--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple"];
+    let r = await runCmd("uv", ["pip", "install", "--python", VENV_PY, "pyyaml", ...idx], { env });
+    if (r.code !== 0) r = await runCmd("uv", ["pip", "install", "--python", VENV_PY, "pyyaml"], { env });
+    if (r.code !== 0) {
+      await runCmd(VENV_PY, ["-m", "ensurepip"], { env });
+      r = await runCmd(VENV_PY, ["-m", "pip", "install", "pyyaml", ...idx], { env });
+    }
+    if ((await runCmd(VENV_PY, ["-c", "import yaml"])).code !== 0) throw new Error("安装 PyYAML 失败：" + r.out.slice(-300));
+  }
+}
+function distillInput(s, sel) {
+  if (!sel || !sel.major || !sel.group || !sel.sub) return null;
+  const dir = path.join(s.vaultPath, "Knowledge", sel.major, sel.group, sel.sub);
+  if (!fs.existsSync(dir)) return null;
+  const parts = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((f) => f.isFile() && f.name.toLowerCase().endsWith(".md"))
+    .map((f) => ({ name: f.name, content: fs.readFileSync(path.join(dir, f.name), "utf8") }));
+  if (!parts.length) return null;
+  return { parts, text: parts.map((p) => `# ${p.name}\n\n${p.content}`).join("\n\n---\n\n") };
+}
+ipcMain.handle("distill:estimate", (_e, _settings, sel) => {
+  const input = distillInput(loadSettings(), sel);
+  if (!input) return { ok: false, error: "子类目录不存在或为空" };
+  return { ok: true, files: input.parts.length, chars: input.text.length, estTokens: Math.ceil(input.text.length * 0.75), text: input.text };
+});
+let distilling = false;
+ipcMain.handle("distill:run", async (event, _settings, sel) => {
+  if (distilling) return { ok: false, error: "已有蒸馏任务在进行" };
+  const s = loadSettings();
+  const input = distillInput(s, sel);
+  if (!input) return { ok: false, error: "子类目录不存在或为空" };
+  const send = (t) => { try { event.sender.send("pipeline:log", t); } catch { /* 窗口已关 */ } };
+  distilling = true;
+  try {
+    send(`仓颉蒸馏开始（RIA-TV++ 七阶段）：${input.parts.length} 篇笔记，合并约 ${Math.ceil(input.text.length * 0.75)} tokens，全程约 10-16 次 AI 调用。\n`);
+    await ensureCangjie(send);
+    const res = await runCangjieDistill({
+      ...s, cangjiePath: CANGJIE_DIR, pythonPath: VENV_PY, distillOutputDir: distillRoot(),
+      onUsage: (data) => recordApiUsage(data),
+    }, sel, send);
+    send(`蒸馏完成。技能包：${res.path}\n`);
+    return { ok: true, path: res.path, root: res.root, content: res.content };
+  } catch (err) {
+    send(`蒸馏失败：${String((err && err.message) || err)}\n`);
+    return { ok: false, error: String((err && err.message) || err) };
+  } finally { distilling = false; }
+});
+function findSkillFile(dir) {
+  const distDir = path.join(dir, "dist");
+  let found = null;
+  const walk = (p, depth) => {
+    if (found || depth > 3) return;
+    for (const f of fs.readdirSync(p, { withFileTypes: true })) {
+      if (found) return;
+      const full = path.join(p, f.name);
+      if (f.isDirectory()) walk(full, depth + 1);
+      else if (f.isFile() && f.name.toLowerCase() === "skill.md") found = full;
+    }
+  };
+  if (fs.existsSync(distDir)) walk(distDir, 0);
+  return found || path.join(dir, "SKILL.md");
+}
+// 技能列表 = 已蒸馏的仓颉技能包 + 知识库大类（kb:<大类>，问答时用该大类笔记摘要作上下文）
 ipcMain.handle("distill:list", async () => {
   const s = loadSettings();
-  const tree = await vidx.tree(s.vaultPath);
-  const list = tree.categories.map((c) => {
-    const n = c.groups.reduce((m, g) => m + g.subs.reduce((k, sub) => k + sub.files.length, 0), 0);
-    return { name: `知识库 · ${c.name}`, path: `kb:${c.name}`, description: `基于「${c.name}」${n} 篇笔记回答`, engine: "kb", notes: n };
-  }).filter((x) => x.notes > 0);
+  const list = [];
+  const root = distillRoot();
+  if (fs.existsSync(root)) {
+    for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!d.isDirectory() || !d.name.startsWith("douyin-distill-")) continue;
+      const dir = path.join(root, d.name);
+      const skillFile = findSkillFile(dir);
+      if (!fs.existsSync(skillFile)) continue;
+      const m = fs.readFileSync(skillFile, "utf8").match(/description:\s*(.+)/);
+      const desc = m ? m[1].trim().replace(/^["']|["']$/g, "") : d.name;
+      list.push({ name: d.name, path: skillFile, description: desc, engine: fs.existsSync(path.join(dir, "PIPELINE_STATE.md")) ? "cangjie" : "legacy" });
+    }
+  }
+  try {
+    const tree = await vidx.tree(s.vaultPath);
+    for (const c of tree.categories) {
+      const n = c.groups.reduce((m, g) => m + g.subs.reduce((k, sub) => k + sub.files.length, 0), 0);
+      if (n > 0) list.push({ name: `知识库 · ${c.name}`, path: `kb:${c.name}`, description: `基于「${c.name}」${n} 篇笔记回答`, engine: "kb", notes: n });
+    }
+  } catch { /* 知识库未设置 */ }
   return { ok: true, list };
+});
+ipcMain.handle("distill:delete", (_e, _settings, name) => {
+  try {
+    const root = path.resolve(distillRoot());
+    const safe = String(name || "").trim();
+    if (!safe.startsWith("douyin-distill-") || safe.includes("/") || safe.includes("..")) return { ok: false, error: "非法技能目录名" };
+    const dir = path.join(root, safe);
+    if (!fs.existsSync(dir)) return { ok: false, error: "技能目录不存在" };
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
 });
 
 ipcMain.handle("chat:ask", async (_e, _settings, payload) => {

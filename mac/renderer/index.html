@@ -337,16 +337,13 @@
     <section id="page-distill" class="page" hidden>
       <header class="page-head">
         <h1>知识蒸馏与 AI 问答</h1>
-        <p class="sub">Mac 版暂未提供知识蒸馏；可以直接选择知识库分类，向 AI 提问</p>
+        <p class="sub">把某个子类的笔记蒸馏成技能包，或直接选择知识库分类向 AI 提问</p>
       </header>
       <div class="distill-steps">
-        <div class="panel mac-na">
-          <div class="panel-title">知识蒸馏 <span class="engine-tag">Mac 版暂未提供</span></div>
-          <p class="hint" style="margin-top:0">仓颉七阶段蒸馏引擎目前只随 Windows 版提供，Mac 版后续再加。下方「AI 问答」可直接基于知识库的某个大类回答问题。</p>
-        </div>
-        <div hidden>
+        <div>
         <div class="panel">
           <div class="panel-title">① 选择要蒸馏的子类 <span class="engine-tag">仓颉 RIA-TV++ 七阶段</span></div>
+          <p class="hint" style="margin-top:0">首次蒸馏会自动下载仓颉引擎（约 10 MB）。每次蒸馏约 10-16 次 AI 调用，用的是你自己的 API Key。</p>
           <div class="distill-pick">
             <select id="dist-major"><option value="">选择大类</option></select>
             <select id="dist-group" disabled><option value="">选择父类</option></select>
@@ -366,7 +363,7 @@
         </div>
         </div>
         <div class="panel">
-          <div class="panel-title">AI 问答（AI 基于所选知识库分类的笔记回答）</div>
+          <div class="panel-title">AI 问答（选一个技能包或知识库分类）</div>
           <div class="chat-pick">
             <select id="chat-skill"><option value="">选择知识库分类…</option></select>
             <span class="chat-pick-note" id="chat-pick-note"></span>
