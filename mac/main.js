@@ -14,6 +14,9 @@ const st = require("./lib/state");
 const llm = require("./lib/llm");
 const launchd = require("./lib/launchd");
 const asr = require("./lib/asr");
+const dweb = require("./lib/douyin-web");
+const { createVaultIndex } = require("./lib/vault-index");
+const vidx = createVaultIndex(); // 知识库异步索引：树/搜索/图谱/统计不阻塞主进程
 const { createUpdater } = require("./lib/updater");
 const { createFonts } = require("./lib/fonts");
 
@@ -29,6 +32,8 @@ const BOOT = global.__dkvBoot || {
 const argValue = (name) => { const a = process.argv.find((x) => x.startsWith(name + "=")); return a ? a.slice(name.length + 1) : ""; };
 const PRINT_LAYER_FILE = argValue("--print-layer");
 const UPDATE_NOW_FILE = argValue("--update-now");
+const LOGIN_PROBE_FILE = argValue("--login-probe");
+const CONTRAST_FILE = argValue("--contrast-check"); // CI：每个皮肤 × 性能模式开/关，检查弹窗与设置卡片文字对比度 // CI：打开登录页，检查能否加载 + 自定义协议是否被拦截
 
 // ---------------- 路径 ----------------
 // 数据目录用纯英文名，避免中文路径在 Python 虚拟环境脚本里出问题
@@ -75,6 +80,7 @@ const DEFAULT_SETTINGS = {
   apiUsage: { weekKey: "", tokens: 0, calls: 0 },
   apiBalance: { time: "", balance: "" },
   schedule: { time: "", weekday: 0, enabled: false, lastRun: "", lastResult: null },
+  perfMode: true,     // 性能模式：关掉毛玻璃（backdrop-filter）、重阴影和装饰动画，背景图用缩小版
   autoUpdate: true,   // 启动时自动检查并后台下载增量更新
   updateMirrors: [],  // 下载源前缀，空数组 = 默认（先直连 GitHub，慢了换 ghfast.top 镜像）
   // 以下为 Windows 版字段，Mac 版不使用，仅为兼容界面保留
@@ -128,10 +134,12 @@ function broadcast(channel, payload) {
   }
 }
 const sendLog = (text) => broadcast("pipeline:log", text);
+/** 知识库有变化：作废索引缓存，通知界面刷新 */
+function vaultChanged() { vidx.invalidate(); broadcast("vault:changed"); }
 
 // ---------------- 单实例 + 定时任务入口 ----------------
 const SCHEDULED = process.argv.includes("--scheduled-sync");
-const gotLock = (PRINT_LAYER_FILE || UPDATE_NOW_FILE) ? true : app.requestSingleInstanceLock();
+const gotLock = (PRINT_LAYER_FILE || UPDATE_NOW_FILE || LOGIN_PROBE_FILE || CONTRAST_FILE) ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
   BOOT.cancelLaunch();
   app.quit();
@@ -170,21 +178,83 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   // 笔记里的外部链接用系统浏览器打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (dweb.isWebUrl(url)) shell.openExternal(url); // 只把 http(s) 交给系统浏览器
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (e, url) => {
-    if (/^https?:/i.test(url)) { e.preventDefault(); shell.openExternal(url); }
+    if (url.startsWith("file:")) return;
+    e.preventDefault();
+    if (dweb.isWebUrl(url)) shell.openExternal(url);
   });
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
 // ---------------- 抖音登录 / Cookie / 采集 ----------------
+const DOUYIN_UA = dweb.chromeUA(process.versions.chrome); // 与内置 Chromium 版本一致，不带 Electron 字样
+const DOUYIN_LOG = path.join(LOG_DIR, "douyin-web.log");
+const blockedSchemes = []; // 最近拦截的自定义协议（调试 / CI 检查用）
+function douyinDebug(line) {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(DOUYIN_LOG, `${new Date().toISOString()} ${line}\n`, "utf8");
+  } catch { /* ignore */ }
+}
+function noteBlocked(kind, url) {
+  const scheme = dweb.protocolOf(url) || String(url).slice(0, 40);
+  blockedSchemes.push({ kind, scheme, at: Date.now() });
+  if (blockedSchemes.length > 50) blockedSchemes.shift();
+  douyinDebug(`[debug] blocked ${kind}: ${String(url).slice(0, 200)}`); // 只记到文件，不打扰用户
+}
+
 function douyinSession() {
   const ses = session.fromPartition(DOUYIN_PARTITION);
-  if (!ses.__uaSet) { ses.setUserAgent(douyin.CHROME_UA, "zh-CN,zh"); ses.__uaSet = true; }
+  if (!ses.__dkvSetup) {
+    ses.__dkvSetup = true;
+    ses.setUserAgent(DOUYIN_UA, "zh-CN,zh");
+    // Client Hints 里也不能出现 Electron
+    ses.webRequest.onBeforeSendHeaders({ urls: ["*://*/*"] }, (details, cb) => {
+      cb({ requestHeaders: dweb.fixRequestHeaders(details.requestHeaders, process.versions.chrome) });
+    });
+    // 抖音页面会探测 bitbrowser:// 等协议；Electron 默认交给 macOS，就会弹「未设定用来打开 URL 的应用程序」
+    ses.setPermissionRequestHandler((_wc, permission, cb, details) => {
+      const ok = dweb.permissionDecision(permission, details);
+      if (!ok && permission === "openExternal") noteBlocked("openExternal", (details && details.externalURL) || "");
+      cb(ok);
+    });
+    ses.setPermissionCheckHandler((_wc, permission, _origin, details) => dweb.permissionDecision(permission, details));
+  }
   return ses;
 }
+
+/** 给每个抖音会话里的 webContents 加上导航/弹窗守卫（登录窗口、隐藏采集窗口、它们的弹窗） */
+function guardDouyinContents(wc, { allowPopups = false } = {}) {
+  if (!wc || wc.__dkvGuard) return;
+  wc.__dkvGuard = true;
+  const block = (kind) => (e, url) => {
+    const u = typeof url === "string" ? url : (e && e.url) || "";
+    if (dweb.isExternalScheme(u)) { e.preventDefault(); noteBlocked(kind, u); }
+  };
+  wc.on("will-navigate", block("will-navigate"));
+  wc.on("will-frame-navigate", (e) => { if (dweb.isExternalScheme(e.url)) { e.preventDefault(); noteBlocked("will-frame-navigate", e.url); } });
+  wc.on("will-redirect", block("will-redirect"));
+  wc.setWindowOpenHandler(({ url }) => {
+    const d = dweb.windowOpenDecision(url, { allowPopups: allowPopups || !!wc.__dkvAllowPopups });
+    if (d === "deny") { if (!dweb.isWebUrl(url)) noteBlocked("window-open", url); return { action: "deny" }; }
+    return {
+      action: "allow",
+      overrideBrowserWindowOptions: { width: 900, height: 700, webPreferences: { partition: DOUYIN_PARTITION, contextIsolation: true, nodeIntegration: false } },
+    };
+  });
+}
+
+app.on("web-contents-created", (_e, wc) => {
+  try {
+    if (wc.session === session.fromPartition(DOUYIN_PARTITION)) {
+      douyinSession();
+      guardDouyinContents(wc);
+    }
+  } catch { /* ignore */ }
+});
 
 async function douyinCookies() {
   const all = await douyinSession().cookies.get({});
@@ -203,20 +273,66 @@ async function exportCookies() {
 }
 
 let loginWindow = null;
-function openLoginWindow() {
-  if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.show(); loginWindow.focus(); return; }
+let loginDiag = null; // 最近一次登录窗口的诊断信息（CI / 排查用）
+function openLoginWindow({ show = true, url = dweb.LOGIN_HOME_URL } = {}) {
+  if (loginWindow && !loginWindow.isDestroyed()) { if (show) { loginWindow.show(); loginWindow.focus(); } return loginWindow; }
+  douyinSession();
   loginWindow = new BrowserWindow({
     width: 1100,
     height: 780,
+    show,
     title: "抖音扫码登录（登录成功后自动关闭）",
+    backgroundColor: "#ffffff",
     webPreferences: { partition: DOUYIN_PARTITION, contextIsolation: true, nodeIntegration: false },
   });
-  douyinSession();
-  loginWindow.loadURL(douyin.COLLECTION_PAGE_URL, { userAgent: douyin.CHROME_UA }).catch(() => {});
-  sendLog("已打开抖音登录窗口：请用抖音 App 扫码，登录成功后窗口会自动关闭。\n");
+  const win = loginWindow;
+  const wc = win.webContents;
+  wc.__dkvAllowPopups = true;
+  guardDouyinContents(wc, { allowPopups: true });
+  loginDiag = { domReady: false, failed: null, gone: null, consoleErrors: 0, probe: null, blank: false, autoLogin: null };
+  let altIdx = 0;
+  let consoleLogged = 0;
+  wc.on("dom-ready", () => { loginDiag.domReady = true; });
+  wc.on("did-fail-load", (_e, code, desc, failedUrl, isMain) => {
+    if (code === -3 || !isMain) return; // -3 = 被新导航取消
+    loginDiag.failed = { code, desc, url: failedUrl };
+    sendLog(`⚠ 抖音登录页加载失败（${code} ${desc}）：${failedUrl}\n`);
+    const alt = dweb.LOGIN_ALT_URLS[altIdx++ % dweb.LOGIN_ALT_URLS.length];
+    wc.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(dweb.failPageHtml(`${desc}（${code}）`, dweb.LOGIN_HOME_URL, alt))).catch(() => {});
+  });
+  wc.on("render-process-gone", (_e, d) => {
+    loginDiag.gone = d && d.reason;
+    sendLog(`⚠ 抖音登录页进程退出（${d && d.reason}），正在重新加载…\n`);
+    if (d && d.reason !== "clean-exit") setTimeout(() => { if (!win.isDestroyed()) wc.loadURL(dweb.LOGIN_HOME_URL, { userAgent: DOUYIN_UA }).catch(() => {}); }, 1000);
+  });
+  wc.on("console-message", (_e, level, message) => {
+    if (level < 3) return;
+    loginDiag.consoleErrors++;
+    if (consoleLogged++ < 5) douyinDebug(`[console] ${String(message).slice(0, 300)}`);
+  });
+  // 首页加载完：没弹出扫码框就点一下「登录」；10 秒后仍空白就给出「重新加载 / 换一个登录页面」
+  let checks = 0;
+  const check = async () => {
+    if (win.isDestroyed()) return;
+    checks++;
+    try {
+      const info = await wc.executeJavaScript(dweb.PROBE_SCRIPT, true);
+      loginDiag.probe = info;
+      if (!info.hasQr && /douyin\.com/.test(info.url) && checks <= 3) loginDiag.autoLogin = await wc.executeJavaScript(dweb.AUTO_LOGIN_SCRIPT, true);
+      if (checks >= 3 && dweb.looksBlank(info)) {
+        loginDiag.blank = true;
+        sendLog("⚠ 抖音登录页一直是空白：可以在登录窗口顶部点「重新加载」或「换一个登录页面」。\n");
+        await wc.executeJavaScript(dweb.blankBannerScript(dweb.LOGIN_ALT_URLS[altIdx++ % dweb.LOGIN_ALT_URLS.length]), true);
+      }
+    } catch (err) { douyinDebug(`[probe] ${err && err.message}`); }
+  };
+  const probeTimers = [3500, 7000, 10500].map((ms) => setTimeout(check, ms));
+  wc.on("did-navigate", () => { if (checks >= 3) setTimeout(check, 4000); });
+  wc.loadURL(url, { userAgent: DOUYIN_UA }).catch(() => {});
+  if (show) sendLog("已打开抖音登录窗口：请用抖音 App 扫码（没看到二维码就点页面右上角「登录」），登录成功后窗口会自动关闭。\n");
   let done = false;
   const timer = setInterval(async () => {
-    if (done || !loginWindow || loginWindow.isDestroyed()) { clearInterval(timer); return; }
+    if (done || win.isDestroyed()) { clearInterval(timer); return; }
     try {
       if (await isLoggedIn()) {
         done = true;
@@ -224,11 +340,12 @@ function openLoginWindow() {
         await exportCookies();
         sendLog("✓ 抖音登录成功，登录状态已保存。\n");
         broadcast("douyin:login", { ok: true });
-        setTimeout(() => { if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close(); }, 2500);
+        setTimeout(() => { if (!win.isDestroyed()) win.close(); }, 2500);
       }
     } catch { /* keep polling */ }
   }, 2000);
-  loginWindow.on("closed", () => { clearInterval(timer); loginWindow = null; });
+  win.on("closed", () => { clearInterval(timer); probeTimers.forEach(clearTimeout); if (loginWindow === win) loginWindow = null; });
+  return win;
 }
 
 /** 在隐藏的抖音页面里执行采集脚本（携带登录 Cookie，同源 fetch） */
@@ -240,10 +357,11 @@ async function withDouyinPage(fn) {
     height: 800,
     webPreferences: { partition: DOUYIN_PARTITION, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   });
+  guardDouyinContents(win.webContents, { allowPopups: false });
   win.webContents.setAudioMuted(true);
   try {
     await Promise.race([
-      win.loadURL(douyin.COLLECTION_PAGE_URL, { userAgent: douyin.CHROME_UA }).catch(() => {}),
+      win.loadURL(douyin.COLLECTION_PAGE_URL, { userAgent: DOUYIN_UA }).catch(() => {}),
       new Promise((r) => setTimeout(r, 30000)),
     ]);
     if (!/douyin\.com/.test(win.webContents.getURL())) throw new Error("打不开抖音网页，请检查网络后重试");
@@ -614,7 +732,7 @@ async function runBatch(keys, { label = "处理", scheduled = false } = {}) {
     if (result.error) fin.error = result.error;
     writeProgress(fin);
     logSched(`${result.error ? "FAILED " + result.error : "DONE"} written=${result.written} skipped=${result.skipped} failed=${result.failed}${result.cancelled ? " cancelled" : ""}`);
-    broadcast("vault:changed");
+    vaultChanged();
   }
   sendLog(`\n本轮结果：生成 ${result.written} 篇 · 跳过 ${result.skipped} 条 · 失败 ${result.failed} 条${result.cancelled ? " · 已取消" : ""}\n`);
   return result;
@@ -689,11 +807,11 @@ ipcMain.handle("llm:test", async (_e, settings) => {
 
 ipcMain.handle("categories:manage", (_e, _settings, args) => {
   const r = vault.manageCategories(loadSettings().vaultPath, args);
-  if (r.ok) broadcast("vault:changed");
+  if (r.ok) vaultChanged();
   return r;
 });
 
-ipcMain.handle("vault:tree", (_e, vaultPath) => vault.vaultTree(vaultPath || loadSettings().vaultPath));
+ipcMain.handle("vault:tree", (_e, vaultPath) => vidx.tree(vaultPath || loadSettings().vaultPath));
 ipcMain.handle("vault:read", (_e, { vaultPath, filePath }) => {
   const base = vaultPath || loadSettings().vaultPath;
   const abs = path.isAbsolute(filePath) ? filePath : path.join(base, String(filePath).replace(/\\/g, "/"));
@@ -709,15 +827,16 @@ ipcMain.handle("vault:openInObsidian", async (_e, vaultPath) => {
   const r = await shell.openPath(p);
   return { ok: r === "", error: r || undefined };
 });
-ipcMain.handle("vault:search", (_e, { vaultPath, query }) => vault.search(vaultPath || loadSettings().vaultPath, query));
+ipcMain.handle("vault:search", (_e, { vaultPath, query }) => vidx.search(vaultPath || loadSettings().vaultPath, query));
 ipcMain.handle("vault:write", (_e, { path: p, content }) => {
   try {
     if (!p || !fs.existsSync(p)) return { ok: false, error: "文件不存在" };
     fs.writeFileSync(p, content, "utf8");
+    vidx.invalidate();
     return { ok: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
-ipcMain.handle("vault:graph", (_e, vaultPath) => vault.graph(vaultPath || loadSettings().vaultPath));
+ipcMain.handle("vault:graph", (_e, vaultPath) => vidx.graph(vaultPath || loadSettings().vaultPath));
 
 // ---------------- IPC：处理组件 ----------------
 function engineStatusPayload(doc) {
@@ -962,9 +1081,9 @@ function readCard(major) {
   return st.readJson(path.join(CARDS_DIR, `${cardSafeName(major)}.json`), null);
 }
 
-ipcMain.handle("cards:list", () => {
+ipcMain.handle("cards:list", async () => {
   const s = loadSettings();
-  const tree = vault.vaultTree(s.vaultPath);
+  const tree = await vidx.tree(s.vaultPath);
   const min = Number(s.cardMinVideos || 50);
   const cards = tree.categories.map((c) => {
     const count = c.groups.reduce((m, g) => m + g.subs.reduce((k, sub) => k + sub.files.length, 0), 0);
@@ -985,7 +1104,7 @@ ipcMain.handle("cards:delete", (_e, _settings, major) => {
 });
 ipcMain.handle("cards:generate", async (_e, _settings, major) => {
   const s = loadSettings();
-  const notes = vault.notesOfMajor(s.vaultPath, String(major || ""));
+  const notes = await vidx.notesOfMajor(s.vaultPath, String(major || ""));
   const min = Number(s.cardMinVideos || 50);
   if (!notes.length) return { ok: true, status: "no-material" };
   if (notes.length < min) return { ok: true, status: "below-threshold" };
@@ -1161,7 +1280,7 @@ function recordApiUsage(respJson) {
   } catch { /* 统计失败不影响主流程 */ }
 }
 
-ipcMain.handle("weekly:stats", () => {
+ipcMain.handle("weekly:stats", async () => {
   try {
     const s = loadSettings();
     const root = vault.knowledgeRoot(s.vaultPath);
@@ -1176,12 +1295,13 @@ ipcMain.handle("weekly:stats", () => {
     let totalNotes = 0, weekNewNotes = 0, lastWeekNewNotes = 0;
     const weekNewTitles = [];
     let weekTopNote = null;
-    if (fs.existsSync(root)) {
-      vault.walkMd(root, (full, name, parts) => {
+    void root;
+    {
+      for (const { full, name, parts, mtimeMs, size } of await vidx.files(s.vaultPath)) {
         totalNotes++;
         const major = parts[0] || "未分类";
         try {
-          const stt = fs.statSync(full);
+          const stt = { mtimeMs, size };
           if (stt.mtimeMs >= ws) {
             weekNewNotes++;
             byCat.set(major, (byCat.get(major) || 0) + 1);
@@ -1193,7 +1313,7 @@ ipcMain.handle("weekly:stats", () => {
             lastCat.set(major, (lastCat.get(major) || 0) + 1);
           }
         } catch { /* ignore */ }
-      });
+      }
     }
     let weekNewCards = 0, lastWeekNewCards = 0, totalCards = 0;
     if (fs.existsSync(CARDS_DIR)) {
@@ -1293,9 +1413,9 @@ ipcMain.handle("distill:estimate", () => ({ ok: false, error: DISTILL_NA }));
 ipcMain.handle("distill:run", () => ({ ok: false, error: DISTILL_NA }));
 ipcMain.handle("distill:delete", () => ({ ok: false, error: DISTILL_NA }));
 // AI 问答的“技能”= 知识库大类（kb:<大类>），问答时把该大类笔记摘要作为上下文
-ipcMain.handle("distill:list", () => {
+ipcMain.handle("distill:list", async () => {
   const s = loadSettings();
-  const tree = vault.vaultTree(s.vaultPath);
+  const tree = await vidx.tree(s.vaultPath);
   const list = tree.categories.map((c) => {
     const n = c.groups.reduce((m, g) => m + g.subs.reduce((k, sub) => k + sub.files.length, 0), 0);
     return { name: `知识库 · ${c.name}`, path: `kb:${c.name}`, description: `基于「${c.name}」${n} 篇笔记回答`, engine: "kb", notes: n };
@@ -1310,7 +1430,7 @@ ipcMain.handle("chat:ask", async (_e, _settings, payload) => {
     let context;
     if (String(payload.skillPath).startsWith("kb:")) {
       const major = String(payload.skillPath).slice(3);
-      const notes = vault.notesOfMajor(s.vaultPath, major);
+      const notes = await vidx.notesOfMajor(s.vaultPath, major);
       if (!notes.length) return { ok: false, error: `「${major}」下还没有笔记` };
       context = llm.buildKbContext(major, notes);
     } else if (fs.existsSync(payload.skillPath)) {
@@ -1374,6 +1494,37 @@ ipcMain.handle("fonts:ensure", (_e, key) => fonts.ensure(key, (p) => broadcast("
 ipcMain.handle("fonts:read", (_e, key) => fonts.read(key));
 
 // CI：--print-layer=<文件> 写出当前加载的应用层信息后退出；--update-now=<文件> 跑一遍真实的检查+下载后退出
+async function runLoginProbe() {
+  const out = {};
+  const hard = setTimeout(() => { try { fs.writeFileSync(LOGIN_PROBE_FILE, JSON.stringify({ ...out, timeout: true }, null, 2)); } catch {} app.exit(0); }, 100000);
+  try {
+    const win = openLoginWindow({ show: false });
+    const wc = win.webContents;
+    for (let i = 0; i < 60 && !loginDiag.domReady; i++) await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 13000)); // 等首页渲染 + 自动点「登录」+ 10 秒空白检查
+    out.diag = JSON.parse(JSON.stringify(loginDiag));
+    out.page = await wc.executeJavaScript(dweb.PROBE_SCRIPT, true).catch((e) => ({ error: String(e) }));
+    out.nav = await wc.executeJavaScript(`({ ua: navigator.userAgent, brands: (navigator.userAgentData && navigator.userAgentData.brands || []).map((b) => b.brand + "/" + b.version) })`, true).catch(() => null);
+    out.expectedUa = DOUYIN_UA;
+    // 模拟抖音的指纹浏览器探测：iframe / 链接 / window.open 指向 bitbrowser://
+    const before = blockedSchemes.length;
+    await wc.executeJavaScript(`(() => {
+      const f = document.createElement("iframe"); f.style.display = "none"; f.src = "bitbrowser://cc/"; (document.body || document.documentElement).appendChild(f);
+      const a = document.createElement("a"); a.href = "bitbrowser://cc/"; (document.body || document.documentElement).appendChild(a); a.click();
+      try { window.open("bitbrowser://cc/"); } catch (e) {}
+      return true;
+    })()`, true).catch(() => {});
+    await new Promise((r) => setTimeout(r, 3000));
+    out.blocked = blockedSchemes.slice(before);
+    out.openWindows = BrowserWindow.getAllWindows().length;
+  } catch (err) {
+    out.error = String((err && err.stack) || err);
+  }
+  clearTimeout(hard);
+  try { fs.writeFileSync(LOGIN_PROBE_FILE, JSON.stringify(out, null, 2)); } catch { /* ignore */ }
+  app.exit(0);
+}
+
 async function runPrintLayer() {
   const out = { version: LAYER_VERSION, source: BOOT.source, bundledVersion: BOOT.bundledVersion, electron: BOOT.electron, root: __dirname, rejected: BOOT.rejected || [] };
   const finish = (extra) => {
@@ -1413,8 +1564,9 @@ function watchVault(vaultPath) {
   const root = vault.knowledgeRoot(vaultPath);
   if (!vaultPath || !fs.existsSync(root)) return;
   const notify = () => {
+    vidx.invalidate(); // 立即作废缓存（便宜）；通知界面去抖 800 ms
     if (vaultWatchDebounce) clearTimeout(vaultWatchDebounce);
-    vaultWatchDebounce = setTimeout(() => { vaultWatchDebounce = null; broadcast("vault:changed"); }, 800);
+    vaultWatchDebounce = setTimeout(() => { vaultWatchDebounce = null; vaultChanged(); }, 800);
   };
   try {
     // macOS 支持递归监听
@@ -1427,6 +1579,42 @@ function clearVaultWatchers() {
   if (vaultWatchDebounce) { clearTimeout(vaultWatchDebounce); vaultWatchDebounce = null; }
   for (const w of vaultWatchers) { try { w.close(); } catch { /* ignore */ } }
   vaultWatchers = [];
+}
+
+// ---------------- CI 对比度检查：--contrast-check=<file> ----------------
+function runContrastCheck() {
+  const contrast = require("./lib/contrast");
+  const CRITICAL = ["#engine-overlay .date-ask-card", "#engine-panel", "#perf-panel", "#update-panel"];
+  const EXTRA = ["#first-run-overlay .date-ask-card", "#date-ask-overlay .date-ask-card", ".settings-grid .panel", ".kb-toast"];
+  const hard = setTimeout(() => { console.log("CONTRAST TIMEOUT"); app.exit(2); }, 120000);
+  mainWindow.webContents.once("did-finish-load", async () => {
+    await new Promise((r) => setTimeout(r, 4000));
+    const out = { runs: [] };
+    try {
+      const skins = await mainWindow.webContents.executeJavaScript("SKINS.map((s) => ({ key: s.key, light: !!s.light }))", true);
+      for (const sk of skins) {
+        for (const perf of [true, false]) {
+          await mainWindow.webContents.executeJavaScript(`(() => {
+            document.body.classList.toggle("perf", ${perf});
+            applySkin(${JSON.stringify(sk.key)});
+            switchPage("settings");
+            const ov = document.getElementById("engine-overlay"); if (ov) ov.hidden = false;
+            if (typeof toast === "function") toast("对比度检查");
+            return true;
+          })()`, true);
+          await new Promise((r) => setTimeout(r, 400));
+          const crit = await mainWindow.webContents.executeJavaScript(contrast.browserScript(CRITICAL, sk.key, sk.light), true);
+          const extra = await mainWindow.webContents.executeJavaScript(contrast.browserScript(EXTRA, sk.key, sk.light), true);
+          out.runs.push({ skin: sk.key, light: sk.light, perf, checked: crit.checked, failures: crit.failures, extraChecked: extra.checked, extraFailures: extra.failures });
+        }
+      }
+    } catch (err) {
+      out.error = String((err && err.stack) || err);
+    }
+    clearTimeout(hard);
+    try { fs.writeFileSync(CONTRAST_FILE, JSON.stringify(out, null, 2)); } catch { /* ignore */ }
+    app.exit(0);
+  });
 }
 
 // ---------------- CI 冒烟测试：--smoke-test 启动窗口、调用一遍主要通道后退出 ----------------
@@ -1482,10 +1670,12 @@ if (gotLock) {
       return;
     }
     if (UPDATE_NOW_FILE) { await runUpdateNow(); return; }
+    if (LOGIN_PROBE_FILE) { await runLoginProbe(); return; }
     createWindow();
     if (PRINT_LAYER_FILE) { runPrintLayer(); return; }
     watchVault(s.vaultPath);
-    if (process.argv.includes("--smoke-test")) runSmokeTest();
+    if (CONTRAST_FILE) runContrastCheck();
+    else if (process.argv.includes("--smoke-test")) runSmokeTest();
     else if (!process.argv.includes("--no-update-check")) setTimeout(() => { checkAndMaybeDownload({ auto: true }).catch(() => {}); }, 6000);
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });

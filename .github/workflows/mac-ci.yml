@@ -66,6 +66,41 @@ jobs:
       - name: Smoke test packaged app
         run: |
           "release/mac-arm64/抖音知识库.app/Contents/MacOS/抖音知识库" --smoke-test >/tmp/smoke.log 2>&1; rc=$?; grep SMOKE /tmp/smoke.log; exit $rc
+      - name: Text contrast check (every skin × 性能模式 on/off, WCAG AA)
+        run: |
+          APP="release/mac-arm64/抖音知识库.app"
+          "$APP/Contents/MacOS/抖音知识库" --contrast-check="$RUNNER_TEMP/contrast.json" >/tmp/contrast.log 2>&1 || true
+          node -e '
+            const j = require(process.argv[1]);
+            if (j.error || !j.runs || !j.runs.length) { console.log(JSON.stringify(j).slice(0, 2000)); process.exit(1); }
+            let bad = 0;
+            for (const r of j.runs) {
+              console.log(`${r.skin.padEnd(10)} perf=${r.perf ? "on " : "off"} checked=${r.checked} fail=${r.failures.length} | other panels checked=${r.extraChecked} fail=${r.extraFailures.length}`);
+              for (const f of r.failures) { bad++; console.log("  FAIL", JSON.stringify(f)); }
+              for (const f of r.extraFailures.slice(0, 5)) console.log("  warn", JSON.stringify(f));
+            }
+            if (j.runs.some((r) => r.checked < 5)) { console.log("too few elements checked"); process.exit(1); }
+            process.exit(bad ? 1 : 0);
+          ' "$RUNNER_TEMP/contrast.json"
+      - name: Douyin login window probe (loads, no Electron UA, custom schemes blocked)
+        run: |
+          APP="release/mac-arm64/抖音知识库.app"
+          "$APP/Contents/MacOS/抖音知识库" --login-probe="$RUNNER_TEMP/login.json" >/tmp/login.log 2>&1 || true
+          cat "$RUNNER_TEMP/login.json"
+          node -e '
+            const j = require(process.argv[1]);
+            const fail = (m) => { console.log("LOGIN PROBE FAIL: " + m); process.exit(1); };
+            if (j.error) fail(j.error);
+            if (!j.diag || !j.diag.domReady) fail("login window never reached dom-ready");
+            if (!j.nav || /Electron/i.test(j.nav.ua) || j.nav.ua !== j.expectedUa) fail("UA mismatch: " + (j.nav && j.nav.ua));
+            if (j.nav.brands.some((b) => /Electron/i.test(b))) fail("Electron in userAgentData brands");
+            if (!(j.blocked || []).some((b) => b.scheme === "bitbrowser:")) fail("bitbrowser:// was not intercepted");
+            const p = j.page || {};
+            // 网络环境不同（GitHub 在海外），页面内容只做尽力检查
+            console.log(`page: ${p.url} textLen=${p.textLen} qr=${p.hasQr} login=${p.hasLogin} blankBanner=${j.diag.blank} autoLogin=${j.diag.autoLogin}`);
+            if (!(p.textLen > 20 || p.hasQr || p.hasLogin)) console.log("::warning::Douyin login page looked blank from the CI runner");
+            console.log("LOGIN PROBE OK");
+          ' "$RUNNER_TEMP/login.json"
       - uses: actions/upload-artifact@v4
         with:
           name: mac-dmg

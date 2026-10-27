@@ -2218,3 +2218,103 @@ body.skin-light .fs-row .fs-val { color: #0e7490; }
 .model-row-foot .engine-msg { margin: 6px 0 0; }
 .model-loc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
 .models-dir { font-family: ui-monospace, Menlo, monospace; margin: 2px 0; }
+
+/* =========================================================
+   弹窗前景色与背景一致（0.2.2）：
+   这些弹窗底色是固定深色，但文字/按钮用的是随皮肤变化的变量，亮色皮肤下变成深色字压在深色底上。
+   做法：亮色皮肤给弹窗换成浅色底（文字变量本来就是深色），深色皮肤保持深色底 + 浅色字。
+   ========================================================= */
+.date-ask-card { color: var(--text); }
+.date-ask-card .engine-ov-step,
+.date-ask-card #ov-step-label { color: var(--text-1); font-weight: 600; }
+.date-ask-card .engine-msg { color: var(--text-2); }
+.date-ask-card .btn:not(.primary) { color: var(--text-1); border-color: var(--glass-border-strong); background: rgba(255, 255, 255, 0.10); }
+.date-ask-card .btn.primary { color: #06101c; }
+.date-ask-card .btn:disabled { opacity: 0.7; }
+body.skin-light .date-ask-card {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.98));
+  border-color: rgba(2, 132, 199, 0.35);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+body.skin-light .date-ask-card .btn:not(.primary) { background: rgba(15, 23, 42, 0.06); border-color: rgba(15, 23, 42, 0.22); }
+body.skin-light .date-ask-card .btn.primary { background: linear-gradient(135deg, #0284c7, #4f46e5); color: #ffffff; }
+body.skin-light .date-ask-card .bar-track { background: rgba(15, 23, 42, 0.10); }
+body.skin-light #engine-overlay, body.skin-light #date-ask-overlay, body.skin-light #first-run-overlay { background: rgba(15, 23, 42, 0.35); }
+/* 提示条底色固定深色：文字固定浅色 */
+.kb-toast { color: #f8fafc; }
+body.skin-light .kb-toast { background: rgba(255, 255, 255, 0.97); color: #0f172a; border-color: rgba(2, 132, 199, 0.35); box-shadow: 0 14px 44px rgba(15, 23, 42, 0.22); }
+/* 设置页：处理组件 / 模型 / 更新卡片在亮色皮肤下的次要文字 */
+body.skin-light .engine-state, body.skin-light .engine-msg { color: #334155; }
+body.skin-light .engine-step, body.skin-light .model-row { background: rgba(255, 255, 255, 0.55); border-color: rgba(15, 23, 42, 0.14); }
+body.skin-light .model-row.current { border-color: rgba(2, 132, 199, 0.55); }
+body.skin-light .update-row { background: rgba(255, 255, 255, 0.55); border-color: rgba(15, 23, 42, 0.12); color: #334155; }
+.engine-state, .engine-msg { color: var(--text-2); }
+
+/* =========================================================
+   性能模式（body.perf，默认开启）：
+   - 关掉所有 backdrop-filter（大背景图上的实时模糊是最耗 GPU 的部分），改用半不透明纯色底
+   - 去掉重阴影、文字发光，装饰动画只播一帧
+   - 背景图由 applySkin 换成 assets/skins/lite/（2560px，JPEG 80），并且不用 fixed 背景
+   关闭后恢复原来的液态玻璃效果。
+   ========================================================= */
+body.perf {
+  --perf-surface: rgba(17, 25, 41, 0.86);
+  --perf-surface-2: rgba(11, 17, 30, 0.93);
+  --perf-input: rgba(255, 255, 255, 0.07);
+  --card-shadow: 0 2px 8px rgba(4, 8, 18, 0.25);
+  --shadow-soft: 0 2px 10px rgba(4, 8, 18, 0.28);
+  --glow: none;
+  --glow-soft: none;
+  background-attachment: scroll !important;
+}
+body.perf.skin-light {
+  --perf-surface: rgba(255, 255, 255, 0.88);
+  --perf-surface-2: rgba(248, 250, 252, 0.95);
+  --perf-input: rgba(15, 23, 42, 0.05);
+  --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.10);
+  --shadow-soft: 0 2px 10px rgba(15, 23, 42, 0.12);
+}
+body.perf *, body.perf *::before, body.perf *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  text-shadow: none !important;
+}
+body.perf #sidebar,
+body.perf .panel,
+body.perf .stat-card,
+body.perf .sr-item,
+body.perf .folder-card,
+body.perf .note-card,
+body.perf .skill-card,
+body.perf .chat-box,
+body.perf .gt-panel,
+body.perf .gt-topbar {
+  background: var(--perf-surface) !important;
+  box-shadow: var(--card-shadow) !important;
+}
+body.perf #log-panel,
+body.perf #reader-overlay,
+body.perf .cat-menu-pop,
+body.perf .kb-toast { background: var(--perf-surface-2) !important; }
+body.perf #engine-overlay,
+body.perf #date-ask-overlay,
+body.perf #first-run-overlay,
+body.perf .cat-modal { background: rgba(2, 6, 14, 0.72) !important; }
+body.perf.skin-light #engine-overlay,
+body.perf.skin-light #date-ask-overlay,
+body.perf.skin-light #first-run-overlay,
+body.perf.skin-light .cat-modal { background: rgba(15, 23, 42, 0.45) !important; }
+body.perf .btn { box-shadow: none !important; }
+body.perf .search-box input,
+body.perf .chat-input-row input,
+body.perf .search-line input,
+body.perf .collect-folder-row select { background: var(--perf-input) !important; }
+body.perf::before { background: linear-gradient(180deg, rgba(7, 11, 20, 0.50), rgba(7, 11, 20, 0.50)) !important; }
+body.perf.skin-light::before { background: rgba(255, 255, 255, 0.18) !important; }
+/* 装饰动画/过渡：只保留最终状态（点击粒子等也随之关闭） */
+body.perf *, body.perf *::before, body.perf *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.06s !important;
+}

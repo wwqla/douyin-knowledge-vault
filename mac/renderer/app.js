@@ -1733,7 +1733,10 @@ const FX_COLORS = {
 };
 function applySkin(key) {
   const s = SKINS.find((x) => x.key === key) || SKINS[0];
-  document.body.style.background = `url('${s.file}') center / cover no-repeat fixed`;
+  // 性能模式：用缩小后的背景图（2560px、JPEG 80），并且不用 fixed 背景
+  const perf = document.body.classList.contains("perf");
+  const file = perf ? s.file.replace("/skins/", "/skins/lite/") : s.file;
+  document.body.style.background = `url('${file}') center / cover no-repeat ${perf ? "scroll" : "fixed"}`;
   document.body.classList.toggle("skin-light", !!s.light);
   document.body.classList.toggle("skin-dark", !s.light);
   window.__dokSkin = s.key;
@@ -3175,6 +3178,7 @@ $("btn-weekly-view").addEventListener("click", () => {
   fillSettingsForm();
   renderVipStatus();
   applyFontSize(settings.fontSize || 14);
+  document.body.classList.toggle("perf", settings.perfMode !== false); // 性能模式默认开启
   applySkin(settings.skin || "lake");
   applyMaterial(settings.cardMaterial || "acrylic");
   applyMotion(settings.uiMotion || "star");

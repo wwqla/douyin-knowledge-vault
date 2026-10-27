@@ -262,6 +262,27 @@
     if (r && r.ok) { engine = r; renderEngine(); toast("已恢复为标准 Hugging Face 缓存"); }
   });
 
+  // ---------- 性能模式 ----------
+  async function setupPerf() {
+    const t = $m("perf-toggle");
+    if (!t) return;
+    let s = {};
+    try { s = await window.api.getSettings(); } catch { /* ignore */ }
+    const apply = (on) => {
+      document.body.classList.toggle("perf", on);
+      setText("perf-badge", on ? "已开启" : "已关闭");
+      if (typeof applySkin === "function") applySkin(window.__dokSkin || s.skin || "lake");
+    };
+    t.checked = s.perfMode !== false;
+    apply(t.checked);
+    t.addEventListener("change", async () => {
+      s = await window.api.saveSettings({ perfMode: t.checked });
+      apply(t.checked);
+      toast(t.checked ? "已开启性能模式" : "已关闭性能模式（液态玻璃）");
+    });
+  }
+  setupPerf();
+
   // ---------- 知识库文件夹选择 ----------
   const pick = $m("btn-pick-vault");
   if (pick) {
