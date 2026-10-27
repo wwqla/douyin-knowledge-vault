@@ -10,6 +10,21 @@
 2. 双击打开 DMG，把「抖音知识库」拖到「应用程序」文件夹。
 3. 第一次打开：应用没有经过 Apple 公证，会提示“无法验证开发者”。点「完成」，然后打开 **系统设置 › 隐私与安全性**，在页面底部找到「抖音知识库」，点 **仍要打开**，再输入开机密码确认。以后就能正常双击打开了。
 
+## 更新（应用内增量更新）
+
+**装过 0.2.0 及以上版本后，不用再重新下载整个安装包。**
+
+- 应用由两层组成：Electron 内核（Chromium + Node，占安装包的绝大部分，很少变化）和我们自己的界面与功能（几 MB）。平时发新版只更新后者。
+- 每次启动会自动检查新版本，有更新就在后台下载（通常几 MB，GitHub 慢时自动换国内镜像），下载完成后到 **设置 › 关于与更新** 点「重启生效」。也可以在那里手动点「检查更新」，并看到当前版本和来源（内置 / 增量）。
+- 下载的更新包会做 sha256 校验，存放在 `~/Library/Application Support/DouyinKnowledgeVault/updates/`，**不会改动应用本身的文件**（不破坏签名，也不需要管理员密码）。
+- 新版本如果启动失败（启动时报错，或连续两次没能正常打开），会自动退回安装包自带的版本，不会把应用弄坏。
+- 只有 **内核（Electron）升级** 时，「关于与更新」会提示「需要下载完整安装包」，点按钮去下载新的 DMG 覆盖安装即可。处理组件、语音识别模型、设置和笔记都不受影响。
+- 不想自动下载：在 `settings.json` 里把 `autoUpdate` 设为 `false`；下载源前缀可在 `updateMirrors` 里改（`""` 表示直连 GitHub）。
+
+## 界面字体
+
+为了让安装包更小，7 款中文字体（清刻黄油体、快乐体、霞鹜文楷等，约 27 MB）不再打包。在 **设置 › 界面字体** 选中哪款才下载哪款（只下载一次，存在 `…/DouyinKnowledgeVault/fonts/`）；下载完成前界面用系统字体（苹方），不影响使用。
+
 ## 第一次使用
 
 全程在应用里点按钮完成，**不需要打开终端，也不需要安装 Homebrew**。
@@ -41,6 +56,8 @@
 | --- | --- |
 | 设置、处理记录、知识卡片 | `~/Library/Application Support/DouyinKnowledgeVault/` |
 | 处理组件、临时音频 | `~/Library/Application Support/DouyinKnowledgeVault/engine/` |
+| 增量更新包 | `~/Library/Application Support/DouyinKnowledgeVault/updates/` |
+| 按需下载的字体 | `~/Library/Application Support/DouyinKnowledgeVault/fonts/` |
 | 语音识别模型 | `~/.cache/huggingface/` |
 | 笔记 | 你选择的知识库文件夹 `/Knowledge/` |
 | 定时任务 | `~/Library/LaunchAgents/com.douyin.knowledge.sync.plist` |
@@ -54,8 +71,10 @@ cd mac
 npm install
 npm start          # 开发运行
 npm run check      # 语法检查
-npm test           # 单元测试（采集映射、Cookie 导出、launchd、状态、知识库）
+npm test           # 单元测试（采集映射、Cookie 导出、launchd、状态、知识库、增量更新、字体下载）
 npm run dist       # 打包 DMG（需在 macOS 上）
 ```
 
-推送 `mac-v*` 标签会由 GitHub Actions（`.github/workflows/mac-release.yml`）在 macOS 上打包并发布到 Releases。
+推送 `mac-v*` 标签会由 GitHub Actions（`.github/workflows/mac-release.yml`）在 macOS 上打包并发布到 Releases：除了 DMG，还会上传增量包 `app-update.asar` 和清单 `app-update.json`（同时覆盖到 `mac-latest` 通道），并用上一个版本的 DMG 走一遍真实的应用内更新。
+
+增量更新的结构：`package.json` 的入口是 `boot/bootstrap.js`（启动器，永远来自安装包），它在 `updates/` 里挑选比内置版本新、sha256 正确、内核大版本一致、没被标记为坏版本的应用层，加载其中的 `main.js`；所有资源路径都相对 `main.js` 所在的应用层。`test/layer-smoke.sh` 在 macOS 上验证加载新层、篡改回退、抛错回退和连续崩溃回退。改了 Electron 大版本或启动器协议（`lib/update-core.js` 的 `BOOT_PROTOCOL`）时，用户需要下载完整 DMG。

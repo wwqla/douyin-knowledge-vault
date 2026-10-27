@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号（不带 mac-v 前缀，例如 0.1.0）"
+        description: "版本号（不带 mac-v 前缀，例如 0.2.0）"
         required: true
 
 permissions:
@@ -19,8 +19,12 @@ jobs:
         working-directory: mac
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -42,27 +46,109 @@ jobs:
         run: |
           APP="release/mac-arm64/抖音知识库.app"
           test -f "$APP/Contents/Resources/engine/install-worker.sh"
-          test -f "$APP/Contents/Resources/engine/worker/pyproject.toml"
           test -f "$APP/Contents/Resources/engine/worker/src/favvault_worker/cli.py"
           test ! -e "$APP/Contents/Resources/engine/worker/tests"
-          npx --yes @electron/asar list "$APP/Contents/Resources/app.asar" | grep -E "^/(main.js|preload.js|lib/douyin.js|renderer/mac.js|assets/card-icons/knowledge-book.png)$"
+          npx --yes @electron/asar list "$APP/Contents/Resources/app.asar" > /tmp/asar.txt
+          for f in /boot/bootstrap.js /main.js /preload.js /lib/update-core.js /renderer/mac.js /engine/install-worker.sh; do grep -qx "$f" /tmp/asar.txt || { echo "missing $f"; exit 1; }; done
+          if grep -E "^/renderer/fonts" /tmp/asar.txt; then echo "fonts must not be bundled"; exit 1; fi
           codesign --verify --deep --strict "$APP" && echo "signature ok"
-          ls -la release/*.dmg
+      - name: Incremental update smoke test
+        run: bash test/layer-smoke.sh "release/mac-arm64/抖音知识库.app"
+      - name: Smoke test packaged app
+        run: |
+          "release/mac-arm64/抖音知识库.app/Contents/MacOS/抖音知识库" --smoke-test >/tmp/smoke.log 2>&1; rc=$?; grep SMOKE /tmp/smoke.log; exit $rc
+      - name: Build incremental update package (app layer)
+        run: |
+          V="${{ steps.v.outputs.version }}"; TAG="mac-v$V"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG"
+          cp "release/mac-arm64/抖音知识库.app/Contents/Resources/app.asar" release/app-update.asar
+          DMG="$(cd release && ls *.dmg | head -1)"
+          NOTES="$(git log -1 --pretty=%s)"
+          node -e '
+            const fs=require("fs"),c=require("crypto");
+            const [v,base,dmg,notes,repo,tag]=process.argv.slice(1);
+            const b=fs.readFileSync("release/app-update.asar");
+            const m={version:v,electron:require("electron/package.json").version,bootstrap:1,
+              sha256:c.createHash("sha256").update(b).digest("hex"),size:b.length,
+              asarUrl:base+"/app-update.asar",dmgUrl:base+"/"+dmg,
+              releaseUrl:"https://github.com/"+repo+"/releases/tag/"+tag,notes,
+              publishedAt:new Date().toISOString()};
+            fs.writeFileSync("release/app-update.json",JSON.stringify(m,null,2));
+            console.log(JSON.stringify(m,null,2));
+          ' "$V" "$BASE" "$DMG" "$NOTES" "$GITHUB_REPOSITORY" "$TAG"
+          ls -la release/*.dmg release/app-update.*
       - name: Publish GitHub Release (prerelease)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="mac-v${{ steps.v.outputs.version }}"
+          V="${{ steps.v.outputs.version }}"; TAG="mac-v$V"
+          DMG_MB=$(( $(stat -f%z release/*.dmg) / 1048576 ))
+          UPD_MB=$(node -e 'console.log((require("fs").statSync("release/app-update.asar").size/1048576).toFixed(1))')
           NOTES=release-notes.md
           {
-            echo "## 抖音知识库 macOS 版 ${{ steps.v.outputs.version }}（预览版）"
+            echo "## 抖音知识库 macOS 版 $V（预览版）"
             echo
             echo "- 适用：Apple 芯片（M1/M2/M3/M4）Mac，macOS 12 及以上"
-            echo "- 下载下方 .dmg，打开后把「抖音知识库」拖进「应用程序」"
+            echo "- **已装 0.2.0 及以上版本**：不用下载安装包，打开应用会自动下载增量更新（约 ${UPD_MB} MB），在「设置 › 关于与更新」点「重启生效」即可"
+            echo "- 首次安装：下载下方 .dmg（约 ${DMG_MB} MB），打开后把「抖音知识库」拖进「应用程序」"
             echo "- 应用未经 Apple 公证：第一次打开会被拦截，到「系统设置 › 隐私与安全性」底部点「仍要打开」"
             echo "- 首次启动按提示一键安装处理组件、下载语音识别模型（不需要终端）"
+            echo "- \`app-update.asar\` / \`app-update.json\` 是给应用内更新用的，不用手动下载"
             echo
             echo "使用说明见 [mac/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/mac/README.md)"
           } > "$NOTES"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 ${{ steps.v.outputs.version }}（预览）" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
-          gh release upload "$TAG" release/*.dmg --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 $V（预览）" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
+          gh release upload "$TAG" release/*.dmg release/app-update.asar release/app-update.json --clobber
+      - name: Update the mac-latest channel (mirror-friendly manifest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view mac-latest >/dev/null 2>&1 || gh release create mac-latest --title "Mac 版增量更新通道（自动维护，请勿下载）" --notes "这个发布只存放最新 Mac 版的 app-update.json，供应用内更新在 GitHub API 不可用时使用。安装包请到对应版本的发布页下载。" --prerelease --target "$GITHUB_SHA"
+          gh release upload mac-latest release/app-update.json --clobber
+      - name: Ensure on-demand fonts release (mac-fonts-v1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view mac-fonts-v1 >/dev/null 2>&1 || gh release create mac-fonts-v1 --title "Mac 版界面字体（按需下载资源）" --notes "Mac 版在用户选择字体时才下载这些开源字体（fontsource / Google Fonts）。" --prerelease --target "$GITHUB_SHA"
+          have="$(gh release view mac-fonts-v1 --json assets -q '.assets[].name')"
+          for f in ../renderer/fonts/vip/*; do
+            echo "$have" | grep -qx "$(basename "$f")" || gh release upload mac-fonts-v1 "$f"
+          done
+          gh release view mac-fonts-v1 --json assets -q '.assets[] | "\(.name) \(.size)"'
+
+  # 真实链路：装上一个版本的 DMG，让它用内置更新器从刚发布的 release 下载增量包，再确认启动的是新版本
+  e2e-update:
+    needs: release
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEW: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find previous version with in-app updates (>= 0.2.0)
+        id: prev
+        run: |
+          PREV="$(gh release list --limit 50 --json tagName -q '.[].tagName' | grep -E '^mac-v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^mac-v//' \
+            | node -e 'const c=(a,b)=>{a=a.split(".").map(Number);b=b.split(".").map(Number);for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]-b[i];return 0};
+              const n=process.argv[1];const l=require("fs").readFileSync(0,"utf8").split(/\s+/).filter(Boolean).filter(v=>c(v,"0.2.0")>=0&&c(v,n)<0).sort(c);console.log(l.pop()||"")' "$NEW")"
+          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          echo "previous: ${PREV:-none}"
+      - name: Install previous DMG and update it in-app
+        if: steps.prev.outputs.prev != ''
+        run: |
+          set -euo pipefail
+          PREV="${{ steps.prev.outputs.prev }}"
+          mkdir -p dl && gh release download "mac-v$PREV" -p "*.dmg" -D dl
+          hdiutil attach -nobrowse -mountpoint /tmp/dkvdmg dl/*.dmg
+          mkdir -p "$RUNNER_TEMP/apps" && cp -R /tmp/dkvdmg/*.app "$RUNNER_TEMP/apps/"
+          hdiutil detach /tmp/dkvdmg
+          APP="$(ls -d "$RUNNER_TEMP"/apps/*.app)"; BIN="$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info.plist" CFBundleExecutable)"
+          export DKV_UPDATES_DIR="$RUNNER_TEMP/updates"
+          wait_file() { for i in $(seq 1 120); do [ -s "$1" ] && return 0; sleep 1; done; return 1; }
+          "$BIN" --print-layer="$RUNNER_TEMP/before.json" & wait_file "$RUNNER_TEMP/before.json"; sleep 1; cat "$RUNNER_TEMP/before.json"
+          "$BIN" --update-now="$RUNNER_TEMP/update.json" & wait_file "$RUNNER_TEMP/update.json"; sleep 1; cat "$RUNNER_TEMP/update.json"
+          node -e 'const j=require(process.argv[1]);if(!(j.download&&j.download.ok&&j.check.latest===process.argv[2]))process.exit(1)' "$RUNNER_TEMP/update.json" "$NEW"
+          ls -la "$DKV_UPDATES_DIR"
+          "$BIN" --print-layer="$RUNNER_TEMP/after.json" & wait_file "$RUNNER_TEMP/after.json"; sleep 1; cat "$RUNNER_TEMP/after.json"
+          node -e 'const j=require(process.argv[1]);if(!(j.version===process.argv[2]&&j.source==="update"&&j.rendererOk===true&&j.bundledVersion===process.argv[3]))process.exit(1)' "$RUNNER_TEMP/after.json" "$NEW" "$PREV"
+          echo "E2E PASS: v$PREV 安装包 → 应用内下载 → 启动 v$NEW 应用层"

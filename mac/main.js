@@ -2,7 +2,7 @@
 // 抖音知识库 · macOS 版主进程
 // 界面沿用 Windows 版（renderer/），后端换成 FavVault 处理引擎（Python worker：yt-dlp 下载 → 本地 Whisper 转写 →
 // OpenAI 兼容接口提炼 → Obsidian Markdown）。抖音扫码登录与收藏采集在 Electron 内完成，不需要 Playwright。
-const { app, BrowserWindow, ipcMain, dialog, shell, session, powerMonitor, Notification } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, session, powerMonitor, Notification, net } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -13,6 +13,21 @@ const vault = require("./lib/vault");
 const st = require("./lib/state");
 const llm = require("./lib/llm");
 const launchd = require("./lib/launchd");
+const { createUpdater } = require("./lib/updater");
+const { createFonts } = require("./lib/fonts");
+
+// ---------------- 应用层信息（由 boot/bootstrap.js 提供） ----------------
+// 本文件可能来自安装包内置的 app.asar，也可能来自数据目录 updates/ 里下载的新应用层；
+// 所有资源路径都相对本文件的 __dirname，自然落在当前应用层里。
+const LAYER_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version; } catch { return app.getVersion(); } })();
+const BOOT = global.__dkvBoot || {
+  protocol: 0, version: LAYER_VERSION, bundledVersion: app.getVersion(), source: "bundled", electron: process.versions.electron,
+  updatesDir: path.join(os.homedir(), "Library", "Application Support", "DouyinKnowledgeVault", "updates"), rejected: [],
+  markReady() {}, markGood() {}, cancelLaunch() {}, fail() {},
+};
+const argValue = (name) => { const a = process.argv.find((x) => x.startsWith(name + "=")); return a ? a.slice(name.length + 1) : ""; };
+const PRINT_LAYER_FILE = argValue("--print-layer");
+const UPDATE_NOW_FILE = argValue("--update-now");
 
 // ---------------- 路径 ----------------
 // 数据目录用纯英文名，避免中文路径在 Python 虚拟环境脚本里出问题
@@ -30,7 +45,11 @@ const CARDS_DIR = path.join(DATA_DIR, "knowledge-cards");
 const COOKIES_FILE = path.join(DATA_DIR, "douyin-cookies.txt");
 const ENGINE_HOME = path.join(DATA_DIR, "engine"); // FAVVAULT_HOME：venv / python / worker 状态库 / 临时媒体
 const VENV_PY = path.join(ENGINE_HOME, "venv", "bin", "python");
-const ENGINE_SRC = app.isPackaged ? path.join(process.resourcesPath, "engine") : path.join(__dirname, "engine");
+// 处理组件源码：增量应用层自带 engine/ 时用它（随增量更新），否则用安装包 Resources/engine
+const ENGINE_SRC = (BOOT.source === "update" && fs.existsSync(path.join(__dirname, "engine", "install-worker.sh")))
+  ? path.join(__dirname, "engine")
+  : (app.isPackaged ? path.join(process.resourcesPath, "engine") : path.join(__dirname, "engine"));
+const FONTS_DIR = path.join(DATA_DIR, "fonts");
 const DOUYIN_PARTITION = "persist:douyin";
 const IS_ARM = process.arch === "arm64";
 const LAUNCH_AGENT = path.join(os.homedir(), "Library", "LaunchAgents", `${launchd.LABEL}.plist`);
@@ -55,6 +74,8 @@ const DEFAULT_SETTINGS = {
   apiUsage: { weekKey: "", tokens: 0, calls: 0 },
   apiBalance: { time: "", balance: "" },
   schedule: { time: "", weekday: 0, enabled: false, lastRun: "", lastResult: null },
+  autoUpdate: true,   // 启动时自动检查并后台下载增量更新
+  updateMirrors: [],  // 下载源前缀，空数组 = 默认（先直连 GitHub，慢了换 ghfast.top 镜像）
   // 以下为 Windows 版字段，Mac 版不使用，仅为兼容界面保留
   projectPath: "", nodePath: "", pythonPath: "", cangjiePath: "", distillOutputDir: "",
 };
@@ -107,8 +128,9 @@ const sendLog = (text) => broadcast("pipeline:log", text);
 
 // ---------------- 单实例 + 定时任务入口 ----------------
 const SCHEDULED = process.argv.includes("--scheduled-sync");
-const gotLock = app.requestSingleInstanceLock();
+const gotLock = (PRINT_LAYER_FILE || UPDATE_NOW_FILE) ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
+  BOOT.cancelLaunch();
   app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
@@ -141,6 +163,7 @@ function createWindow() {
     },
   });
   mainWindow.once("ready-to-show", () => { mainWindow.center(); mainWindow.show(); mainWindow.focus(); });
+  mainWindow.webContents.once("did-finish-load", () => BOOT.markReady());
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   // 笔记里的外部链接用系统浏览器打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -323,6 +346,18 @@ async function engineDoctor() {
 }
 
 let installing = false;
+// 递归复制（只用 Electron 支持 asar 的基础 fs 接口，源目录可以在 .asar 里）
+function copyTree(src, dst, filter) {
+  if (filter && !filter(src)) return;
+  const stt = fs.statSync(src);
+  if (stt.isDirectory()) {
+    fs.mkdirSync(dst, { recursive: true });
+    for (const n of fs.readdirSync(src)) copyTree(path.join(src, n), path.join(dst, n), filter);
+  } else {
+    fs.writeFileSync(dst, fs.readFileSync(src));
+  }
+}
+
 async function installEngine() {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
   const script = path.join(ENGINE_SRC, "install-worker.sh");
@@ -335,10 +370,13 @@ async function installEngine() {
     const workDir = path.join(ENGINE_HOME, "src", "worker");
     fs.rmSync(workDir, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(workDir), { recursive: true });
-    fs.cpSync(src, workDir, { recursive: true, filter: (p) => !/(__pycache__|\.pytest_cache|\/tests(\/|$))/.test(p) });
+    copyTree(src, workDir, (p) => !/(__pycache__|\.pytest_cache|\/tests(\/|$))/.test(p));
+    // 脚本可能在 .asar 里（增量应用层），bash 读不了：先拷出来
+    const scriptCopy = path.join(ENGINE_HOME, "src", "install-worker.sh");
+    fs.writeFileSync(scriptCopy, fs.readFileSync(script));
     const extra = IS_ARM ? "mlx" : "cpu";
     return await new Promise((resolve) => {
-      const child = spawn("/bin/bash", [script, workDir, extra], {
+      const child = spawn("/bin/bash", [scriptCopy, workDir, extra], {
         env: { ...process.env, FAVVAULT_HOME: ENGINE_HOME, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
         cwd: ENGINE_HOME,
       });
@@ -1202,6 +1240,73 @@ ipcMain.handle("chat:ask", async (_e, _settings, payload) => {
   }
 });
 
+// ---------------- 应用内增量更新 / 按需字体 ----------------
+const ofs = (() => { try { return require("original-fs"); } catch { return fs; } })(); // .asar 当普通文件写
+const updateMirrors = () => loadSettings().updateMirrors;
+const updater = createUpdater({ fetchImpl: (u, o) => net.fetch(u, o), fsImpl: ofs, boot: BOOT, getMirrors: updateMirrors });
+const fonts = createFonts({ fetchImpl: (u, o) => net.fetch(u, o), fsImpl: fs, dir: FONTS_DIR, getMirrors: updateMirrors });
+let lastCheck = null;
+
+async function checkAndMaybeDownload({ auto } = {}) {
+  const r = await updater.check();
+  lastCheck = r;
+  broadcast("update:status", { phase: "checked", result: stripManifest(r) });
+  // 启动时自动检查：有可增量更新的新版本就直接在后台下载（几 MB），下载完提示重启
+  if (auto && r.ok && r.available && !r.needsFull && !r.badBefore && !r.alreadyDownloaded && loadSettings().autoUpdate !== false) {
+    await downloadUpdate(r.manifest);
+  }
+  return r;
+}
+function stripManifest(r) { if (!r) return r; const { manifest, ...rest } = r; return rest; }
+async function downloadUpdate(manifest) {
+  broadcast("update:progress", { pct: 0, received: 0, total: manifest.size, source: "" });
+  const r = await updater.download(manifest, (p) => broadcast("update:progress", p));
+  broadcast("update:status", { phase: r.ok ? "downloaded" : "error", result: r });
+  return r;
+}
+ipcMain.handle("update:info", () => ({ ...updater.info(), lastCheck: stripManifest(lastCheck), downloading: updater.downloading }));
+ipcMain.handle("update:check", async () => stripManifest(await checkAndMaybeDownload({ auto: false })));
+ipcMain.handle("update:download", async () => {
+  if (!lastCheck || !lastCheck.ok || !lastCheck.available) await checkAndMaybeDownload({ auto: false });
+  if (!lastCheck || !lastCheck.ok) return { ok: false, error: (lastCheck && lastCheck.error) || "检查更新失败" };
+  if (!lastCheck.available) return { ok: false, error: "已是最新版本" };
+  if (lastCheck.needsFull) return { ok: false, needsFull: true, error: "需要下载完整安装包" };
+  return downloadUpdate(lastCheck.manifest);
+});
+ipcMain.handle("update:restart", () => { app.relaunch(); app.exit(0); return true; });
+ipcMain.handle("update:openUrl", (_e, url) => { if (/^https:\/\/github\.com\//.test(String(url))) shell.openExternal(url); return true; });
+
+ipcMain.handle("fonts:list", () => fonts.list());
+ipcMain.handle("fonts:ensure", (_e, key) => fonts.ensure(key, (p) => broadcast("fonts:progress", p)));
+ipcMain.handle("fonts:read", (_e, key) => fonts.read(key));
+
+// CI：--print-layer=<文件> 写出当前加载的应用层信息后退出；--update-now=<文件> 跑一遍真实的检查+下载后退出
+async function runPrintLayer() {
+  const out = { version: LAYER_VERSION, source: BOOT.source, bundledVersion: BOOT.bundledVersion, electron: BOOT.electron, root: __dirname, rejected: BOOT.rejected || [] };
+  const finish = (extra) => {
+    try { fs.writeFileSync(PRINT_LAYER_FILE, JSON.stringify({ ...out, ...extra }, null, 2)); } catch { /* ignore */ }
+    BOOT.markGood();
+    app.exit(0);
+  };
+  const t = setTimeout(() => finish({ windowLoaded: false }), 45000);
+  mainWindow.webContents.once("did-finish-load", async () => {
+    let api = false;
+    try { api = await mainWindow.webContents.executeJavaScript("typeof window.api === 'object' && !!document.getElementById('page-settings')", true); } catch { /* ignore */ }
+    clearTimeout(t);
+    finish({ windowLoaded: true, rendererOk: api });
+  });
+}
+async function runUpdateNow() {
+  let res;
+  try {
+    const c = await updater.check();
+    res = { check: stripManifest(c) };
+    if (c.ok && c.available && !c.needsFull) res.download = await updater.download(c.manifest, () => {});
+  } catch (err) { res = { error: String((err && err.stack) || err) }; }
+  try { fs.writeFileSync(UPDATE_NOW_FILE, JSON.stringify({ from: LAYER_VERSION, source: BOOT.source, ...res }, null, 2)); } catch { /* ignore */ }
+  app.exit(0);
+}
+
 // 开源版没有会员体系：界面里的会员接口统一放行
 ipcMain.handle("vip:verify", () => ({ active: true }));
 ipcMain.handle("vip:issue", () => ({ ok: true, active: true }));
@@ -1281,9 +1386,12 @@ if (gotLock) {
       if (!mainWindow) app.quit();
       return;
     }
+    if (UPDATE_NOW_FILE) { await runUpdateNow(); return; }
     createWindow();
+    if (PRINT_LAYER_FILE) { runPrintLayer(); return; }
     watchVault(s.vaultPath);
     if (process.argv.includes("--smoke-test")) runSmokeTest();
+    else if (!process.argv.includes("--no-update-check")) setTimeout(() => { checkAndMaybeDownload({ auto: true }).catch(() => {}); }, 6000);
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
 

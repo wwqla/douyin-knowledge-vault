@@ -246,10 +246,172 @@
     }
   };
 
+  // ---------- 关于与更新（应用内增量更新） ----------
+  const fmtMB = (n) => (Number(n) / 1024 / 1024).toFixed(1) + " MB";
+  let upd = { info: null, check: null, downloading: false, downloaded: "" };
+  function showBtn(id, on) { const b = $m(id); if (b) b.hidden = !on; }
+  function renderUpdate() {
+    const i = upd.info || {};
+    setText("update-version", i.version ? "v" + i.version : "—");
+    setText("update-source", i.source === "update" ? `增量（安装包 v${i.bundledVersion}）` : "内置");
+    setText("update-electron", i.electron ? "Electron " + i.electron : "—");
+    const c = upd.check;
+    const badge = $m("update-badge");
+    showBtn("btn-update-download", false); showBtn("btn-update-restart", false); showBtn("btn-update-full", false);
+    if (upd.downloaded) {
+      setText("update-state", "已下载 v" + upd.downloaded);
+      setBar("update-bar", 100);
+      setText("update-msg", "新版本已下载并校验通过，点「重启生效」即可使用（数据、处理组件和语音模型都不受影响）。");
+      showBtn("btn-update-restart", true);
+      if (badge) { badge.textContent = "有更新待重启"; badge.style.color = "#fbbf24"; }
+      return;
+    }
+    if (upd.downloading) { setText("update-state", "下载中…"); return; }
+    if (!c) { setText("update-state", "—"); if (badge) badge.textContent = ""; return; }
+    if (!c.ok) { setText("update-state", "检查失败"); setText("update-msg", c.error || ""); setBar("update-bar", 0); return; }
+    if (!c.available) {
+      setText("update-state", "已是最新 ✓"); setBar("update-bar", 100);
+      setText("update-msg", `最新版本 v${c.latest}。`);
+      if (badge) { badge.textContent = "已是最新"; badge.style.color = "#7ee787"; }
+      return;
+    }
+    if (badge) { badge.textContent = "发现新版本 v" + c.latest; badge.style.color = "#fbbf24"; }
+    setBar("update-bar", 0);
+    if (c.needsFull) {
+      setText("update-state", "需要下载完整安装包");
+      setText("update-msg", `v${c.latest}：${c.fullReason || "内核有变化"}，这次没法只下载增量，需要下载完整安装包（.dmg）覆盖安装。${c.notes ? "\n更新内容：" + c.notes : ""}`);
+      showBtn("btn-update-full", true);
+      return;
+    }
+    setText("update-state", `新版本 v${c.latest}（${fmtMB(c.size)}）`);
+    setText("update-msg", (c.badBefore ? "注意：这个版本上次启动失败已自动退回，可重新下载再试。\n" : "") + (c.notes ? "更新内容：" + c.notes : "只需下载几 MB，下载完重启生效。"));
+    showBtn("btn-update-download", true);
+  }
+  async function refreshUpdateInfo() {
+    try {
+      const i = await window.api.updateInfo();
+      upd.info = i;
+      if (i.downloaded) upd.downloaded = i.downloaded;
+      if (i.lastCheck) upd.check = i.lastCheck;
+      if (i.downloading) upd.downloading = true;
+    } catch { /* ignore */ }
+    renderUpdate();
+  }
+  async function doUpdateCheck() {
+    const b = $m("btn-update-check");
+    if (b) b.disabled = true;
+    setText("update-state", "检查中…"); setText("update-msg", "");
+    try { upd.check = await window.api.updateCheck(); } catch (e) { upd.check = { ok: false, error: String(e) }; }
+    if (b) b.disabled = false;
+    renderUpdate();
+  }
+  async function doUpdateDownload() {
+    if (upd.downloading) return;
+    upd.downloading = true;
+    showBtn("btn-update-download", false);
+    setText("update-state", "下载中…"); setText("update-msg", "连接中…"); setBar("update-bar", 0);
+    const r = await window.api.updateDownload();
+    upd.downloading = false;
+    if (r && r.ok) { upd.downloaded = r.version; toast("新版本已下载，重启生效"); }
+    else { setText("update-msg", (r && r.error) || "下载失败"); }
+    renderUpdate();
+    if (r && !r.ok) setText("update-msg", r.error || "下载失败");
+  }
+  window.api.onUpdateProgress((p) => {
+    upd.downloading = p.pct < 100;
+    setText("update-state", p.pct >= 100 ? "校验完成" : `下载中 ${p.pct}%`);
+    setBar("update-bar", p.pct);
+    setText("update-msg", `${fmtMB(p.received)} / ${p.total ? fmtMB(p.total) : "?"}${p.source ? " · 来源 " + p.source : ""}`);
+  });
+  window.api.onUpdateStatus((s) => {
+    if (s.phase === "checked") { upd.check = s.result; renderUpdate(); }
+    else if (s.phase === "downloaded") { upd.downloading = false; upd.downloaded = s.result.version; renderUpdate(); toast(`新版本 v${s.result.version} 已下载，到「设置 › 关于与更新」点「重启生效」`); }
+    else if (s.phase === "error") { upd.downloading = false; renderUpdate(); setText("update-msg", (s.result && s.result.error) || "下载失败"); }
+  });
+  $m("btn-update-check") && $m("btn-update-check").addEventListener("click", doUpdateCheck);
+  $m("btn-update-download") && $m("btn-update-download").addEventListener("click", doUpdateDownload);
+  $m("btn-update-restart") && $m("btn-update-restart").addEventListener("click", () => window.api.updateRestart());
+  $m("btn-update-full") && $m("btn-update-full").addEventListener("click", () => {
+    const c = upd.check || {};
+    window.api.openReleaseUrl(c.dmgUrl || c.releaseUrl || "https://github.com/wwqla/douyin-knowledge-vault/releases");
+  });
+
+  // ---------- 界面字体（按需下载） ----------
+  let fontList = [];
+  const loadedFaces = new Set();
+  let fontBusy = "";
+  async function injectFont(key) {
+    if (loadedFaces.has(key)) return true;
+    const r = await window.api.fontsRead(key);
+    if (!r || !r.data) return false;
+    try {
+      const face = new FontFace(r.family, r.data, { weight: r.weight || "normal", display: "swap" });
+      await face.load();
+      document.fonts.add(face);
+      loadedFaces.add(key);
+      return true;
+    } catch (e) { return false; }
+  }
+  function currentFontKey() { const v = (settings && settings.vip) || {}; return v.font && v.font !== "default" ? v.font : "default"; }
+  function renderFonts() {
+    const grid = $m("font-grid");
+    if (!grid) return;
+    const cur = currentFontKey();
+    const opts = [{ key: "default", name: "默认字体", ready: true, sys: true }, ...fontList];
+    grid.innerHTML = opts.map((f) => `<button class="font-opt${f.key === cur ? " active" : ""}${fontBusy === f.key ? " busy" : ""}" data-font="${f.key}">${f.name}<small>${f.sys ? "系统苹方，无需下载" : (f.ready ? "已下载" : "需下载 " + fmtMB(f.size))}</small></button>`).join("");
+    grid.querySelectorAll(".font-opt").forEach((b) => b.addEventListener("click", () => pickFont(b.dataset.font)));
+    const ready = fontList.filter((f) => f.ready).length;
+    setText("font-state", ready ? `已下载 ${ready}/${fontList.length}` : "");
+  }
+  async function refreshFonts() { try { fontList = await window.api.fontsList(); } catch { fontList = []; } renderFonts(); }
+  // 覆盖 app.js 的同名函数：选中的字体未下载/未注入时先用系统字体，准备好再切换
+  // eslint-disable-next-line no-global-assign
+  applyVipFont = function () {
+    const key = currentFontKey();
+    const f = fontList.find((x) => x.key === key);
+    if (key === "default" || !f) { document.body.style.fontFamily = ""; renderFonts(); return; }
+    if (loadedFaces.has(key)) { document.body.style.fontFamily = f.css; renderFonts(); return; }
+    document.body.style.fontFamily = "";
+    if (f.ready) injectFont(key).then((ok) => { if (ok && currentFontKey() === key) document.body.style.fontFamily = f.css; });
+    renderFonts();
+  };
+  async function pickFont(key) {
+    if (fontBusy) { toast("正在下载字体，请稍候"); return; }
+    const hint = $m("font-hint");
+    if (key !== "default") {
+      const f = fontList.find((x) => x.key === key);
+      if (!f) return;
+      if (!f.ready) {
+        fontBusy = key; renderFonts();
+        const track = $m("font-bar-track"); if (track) track.hidden = false;
+        setBar("font-bar", 0);
+        if (hint) hint.textContent = `正在下载「${f.name}」…`;
+        const r = await window.api.fontsEnsure(key);
+        fontBusy = ""; if (track) track.hidden = true;
+        if (!r || !r.ok) { if (hint) hint.textContent = (r && r.error) || "下载失败，先继续使用系统字体"; await refreshFonts(); return; }
+        await refreshFonts();
+      }
+      if (!(await injectFont(key))) { if (hint) hint.textContent = "字体文件加载失败，先继续使用系统字体"; return; }
+    }
+    settings = await window.api.saveSettings({ vip: { ...(settings.vip || {}), font: key } });
+    applyVipFont();
+    const name = key === "default" ? "默认字体" : fontList.find((x) => x.key === key).name;
+    if (hint) hint.textContent = key === "default" ? "已恢复默认字体" : `已切换为「${name}」，重启后依然生效`;
+    toast("界面字体：" + name);
+  }
+  window.api.onFontsProgress((p) => {
+    setBar("font-bar", p.pct);
+    const f = fontList.find((x) => x.key === p.key);
+    const hint = $m("font-hint");
+    if (hint) hint.textContent = `正在下载「${f ? f.name : p.key}」 ${p.pct}%（${fmtMB(p.received)} / ${p.total ? fmtMB(p.total) : "?"}${p.source ? " · " + p.source : ""}）`;
+  });
+
   // ---------- 启动 ----------
   const wait = () => (typeof settings !== "undefined" && settings ? Promise.resolve() : new Promise((r) => setTimeout(() => wait().then(r), 200)));
   wait().then(() => {
     bootEngine();
+    refreshUpdateInfo();
+    refreshFonts().then(() => applyVipFont());
     window.api.authStatus(settings).then((res) => {
       const stEl = $m("login-status");
       if (!stEl) return;

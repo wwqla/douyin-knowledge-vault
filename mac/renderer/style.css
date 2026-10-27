@@ -1,43 +1,7 @@
 /* =========================================================
    抖音知识库 - 液态玻璃主题（Liquid Glass + 风景背景）
    ========================================================= */
-/* VIP 专属字体（fontsource / Google Fonts 开源字体，本地自托管，仅会员可切换） */
-@font-face {
-  font-family: "ZCOOL QingKe HuangYou";
-  src: url("fonts/vip/ZCOOLQingKeHuangYou-Regular.ttf") format("truetype");
-  font-display: swap;
-}
-@font-face {
-  font-family: "ZCOOL KuaiLe";
-  src: url("fonts/vip/ZCOOLKuaiLe-Regular.ttf") format("truetype");
-  font-display: swap;
-}
-@font-face {
-  font-family: "Zhi Mang Xing";
-  src: url("fonts/vip/ZhiMangXing-Regular.woff2") format("woff2");
-  font-display: swap;
-}
-@font-face {
-  font-family: "LXGW ZhenKai";
-  src: url("fonts/vip/LXGWZhenKai-Regular.ttf") format("truetype");
-  font-display: swap;
-}
-@font-face {
-  font-family: "ZCOOL XiaoWei";
-  src: url("fonts/vip/ZCOOLXiaoWei-Regular.woff2") format("woff2");
-  font-display: swap;
-}
-@font-face {
-  font-family: "Ma Shan Zheng";
-  src: url("fonts/vip/MaShanZheng-Regular.woff2") format("woff2");
-  font-display: swap;
-}
-@font-face {
-  font-family: "LXGW WenKai";
-  src: url("fonts/vip/LXGWWenKai-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
-}
+/* 界面字体改为按需下载（Mac 版）：@font-face 由 mac.js 用 FontFace 动态注入，未下载时回退到苹方 */
 :root {
   --glass-border: rgba(255, 255, 255, 0.16);
   --glass-border-strong: rgba(255, 255, 255, 0.28);
@@ -477,7 +441,7 @@ body.skin-light .vip-benefits { border-color: rgba(15, 23, 42, 0.12); background
 .vip-fonts-title { margin-top: 14px; font-size: 13px; font-weight: 700; color: var(--text-1); }
 .vip-fonts-title .vip-fonts-state { font-weight: 500; font-size: 12px; color: var(--text-3); }
 .vip-fonts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
-.vip-font-opt {
+.vip-font-opt, .font-opt {
   padding: 10px 8px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.06); color: var(--text-1); font-size: 15px;
   cursor: pointer; transition: border-color 0.15s, background 0.15s, opacity 0.15s;
@@ -2230,3 +2194,15 @@ body.skin-light .fs-row .fs-val { color: #0e7490; }
 .vault-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .vault-row input { flex: 1; margin-top: 0 !important; }
 .mac-na .engine-tag { background: rgba(251, 191, 36, 0.18); color: #fbbf24; }
+
+/* ---- Mac 版：关于与更新 / 按需字体 ---- */
+.update-rows { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 4px; }
+.update-row { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); font-size: 12px; color: var(--text-3); }
+.update-row b { font-size: 13px; color: var(--text-1); font-weight: 600; }
+.update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.font-opt { text-align: left; }
+.font-opt:hover { border-color: rgba(124, 227, 255, 0.55); }
+.font-opt.active { border-color: rgba(255, 201, 92, 0.65); background: rgba(255, 201, 92, 0.12); box-shadow: 0 0 0 2px rgba(255, 201, 92, 0.18); }
+.font-opt small { display: block; margin-top: 2px; font-size: 0.857em; color: var(--text-3); font-family: inherit; }
+.font-opt.busy { opacity: 0.7; cursor: progress; }
+.font-bar-track { margin-top: 10px; }

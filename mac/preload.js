@@ -151,6 +151,19 @@ contextBridge.exposeInMainWorld("api", {
   onEngineProgress: (cb) => ipcRenderer.on("engine:progress", (_e, p) => cb(p)),
   onDouyinLogin: (cb) => ipcRenderer.on("douyin:login", (_e, p) => cb(p)),
   pickVault: () => ipcRenderer.invoke("dialog:pickVault"),
+  // 应用内增量更新
+  updateInfo: () => ipcRenderer.invoke("update:info"),
+  updateCheck: () => ipcRenderer.invoke("update:check"),
+  updateDownload: () => ipcRenderer.invoke("update:download"),
+  updateRestart: () => ipcRenderer.invoke("update:restart"),
+  openReleaseUrl: (url) => ipcRenderer.invoke("update:openUrl", url),
+  onUpdateProgress: (cb) => ipcRenderer.on("update:progress", (_e, p) => cb(p)),
+  onUpdateStatus: (cb) => ipcRenderer.on("update:status", (_e, p) => cb(p)),
+  // 按需下载的界面字体
+  fontsList: () => ipcRenderer.invoke("fonts:list"),
+  fontsEnsure: (key) => ipcRenderer.invoke("fonts:ensure", key),
+  fontsRead: (key) => ipcRenderer.invoke("fonts:read", key),
+  onFontsProgress: (cb) => ipcRenderer.on("fonts:progress", (_e, p) => cb(p)),
   // 开源版无会员体系，保留接口避免界面报错
   vipVerify: () => ipcRenderer.invoke("vip:verify"),
   vipIssue: () => ipcRenderer.invoke("vip:issue"),

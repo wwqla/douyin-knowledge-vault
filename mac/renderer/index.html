@@ -411,6 +411,26 @@
           </div>
           <p class="hint">安装约需 3~10 分钟（视网速），请保持联网。音频只在本机转写，不会上传。</p>
         </div>
+        <div class="panel update-panel" id="update-panel">
+          <div class="panel-title">关于与更新 <span class="save-hint" id="update-badge"></span></div>
+          <div class="update-rows">
+            <div class="update-row"><span>当前版本</span><b id="update-version">—</b></div>
+            <div class="update-row"><span>来源</span><b id="update-source">—</b></div>
+            <div class="update-row"><span>内核</span><b id="update-electron">—</b></div>
+          </div>
+          <p class="hint" id="update-about">更新只下载界面与功能部分（通常几 MB），Electron 内核不变就不用重新下载整个安装包。</p>
+          <div class="engine-step">
+            <div class="engine-step-head"><b>应用更新</b><span class="engine-state" id="update-state">—</span></div>
+            <div class="bar-track"><div class="bar-fill" id="update-bar"></div></div>
+            <div class="engine-msg" id="update-msg"></div>
+            <div class="update-actions">
+              <button class="btn" id="btn-update-check">检查更新</button>
+              <button class="btn primary" id="btn-update-download" hidden>下载更新</button>
+              <button class="btn primary" id="btn-update-restart" hidden>重启生效</button>
+              <button class="btn" id="btn-update-full" hidden>下载完整安装包</button>
+            </div>
+          </div>
+        </div>
         <div class="panel">
           <div class="panel-title">使用说明书</div>
           <details class="help-block" open>
@@ -574,6 +594,13 @@
           <div class="panel-title">界面皮肤</div>
           <p class="hint">选择背景风景壁纸，切换后立即生效并记住你的选择。</p>
           <div id="skin-grid" class="skin-grid"></div>
+        </div>
+        <div class="panel font-panel" id="font-panel">
+          <div class="panel-title">界面字体 <span class="save-hint" id="font-state"></span></div>
+          <p class="hint">中文字体不再打包进安装包，选中哪款才下载哪款（存在本机，只下载一次）。下载完成前先用系统字体（苹方）。</p>
+          <div id="font-grid" class="vip-fonts font-grid"></div>
+          <div class="bar-track font-bar-track" id="font-bar-track" hidden><div class="bar-fill" id="font-bar"></div></div>
+          <div class="vip-hint" id="font-hint"></div>
         </div>
         <div class="panel material-panel" id="material-panel" hidden>
           <div class="panel-title">界面材质 <span class="vip-badge-tag">隐藏彩蛋</span></div>
