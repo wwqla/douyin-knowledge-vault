@@ -1,0 +1,12 @@
+{
+  "version": "0.2.8",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "1cee1b038536d07045c694e8f46f2c38a5effc6c25ddc7b1cb428bec0b5c41ea",
+  "size": 9938477,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.8/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.8",
+  "notes": "设置页「处理组件」全部就绪后自动折叠成一行，点「管理」再展开",
+  "publishedAt": "2026-10-27T17:24:57.179Z"
+}
