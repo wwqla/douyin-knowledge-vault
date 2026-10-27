@@ -1,0 +1,12 @@
+{
+  "version": "0.2.7",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "4669eb05a90241e80b2843f6f7c9974de65abad8f71eb2b998cf46c043685d5e",
+  "size": 9937111,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.7/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.7",
+  "notes": "新增知识蒸馏（仓颉七阶段，和 Windows 版同一套）：首次使用自动下载引擎；「我的技能」可管理技能包；「AI 问答」可选技能包或知识库分类提问",
+  "publishedAt": "2026-10-27T17:20:22.578Z"
+}
