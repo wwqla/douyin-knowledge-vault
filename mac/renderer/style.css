@@ -2318,3 +2318,13 @@ body.perf *, body.perf *::before, body.perf *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.06s !important;
 }
+
+/* 对比度修正（CI 对比度检查发现）：状态徽标、提示字、更新卡片标签、等宽代码 */
+.save-hint.badge-ok { color: #7ee787; }
+.save-hint.badge-warn { color: #fbbf24; }
+body.skin-light .save-hint.badge-ok { color: #047857; }
+body.skin-light .save-hint.badge-warn { color: #b45309; }
+body.skin-light .save-hint { color: #1d4ed8; }
+.update-row > span { color: var(--text-2); }
+.settings-grid small { color: var(--text-2); }
+body.skin-light .settings-grid code { color: #075985; }

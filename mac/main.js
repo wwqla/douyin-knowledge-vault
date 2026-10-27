@@ -1602,7 +1602,7 @@ function runContrastCheck() {
             if (typeof toast === "function") toast("对比度检查");
             return true;
           })()`, true);
-          await new Promise((r) => setTimeout(r, 400));
+          await new Promise((r) => setTimeout(r, 1500)); // 等颜色过渡动画结束
           const crit = await mainWindow.webContents.executeJavaScript(contrast.browserScript(CRITICAL, sk.key, sk.light), true);
           const extra = await mainWindow.webContents.executeJavaScript(contrast.browserScript(EXTRA, sk.key, sk.light), true);
           out.runs.push({ skin: sk.key, light: sk.light, perf, checked: crit.checked, failures: crit.failures, extraChecked: extra.checked, extraFailures: extra.failures });

@@ -21,7 +21,9 @@
     const ready = e.installed && e.asrReady;
     if (badge) {
       badge.textContent = ready ? "已就绪 ✓" : (e.installed ? "还差语音识别模型" : "未安装");
-      badge.style.color = ready ? "#7ee787" : "#fbbf24";
+      badge.style.color = "";
+      badge.classList.toggle("badge-ok", !!ready);
+      badge.classList.toggle("badge-warn", !ready);
     }
     const ib = $m("btn-engine-install");
     if (!installBusy) {

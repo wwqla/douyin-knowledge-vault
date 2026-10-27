@@ -54,7 +54,20 @@ jobs:
       - name: Smoke test packaged app
         run: |
           "release/mac-arm64/抖音知识库.app/Contents/MacOS/抖音知识库" --smoke-test >/tmp/smoke.log 2>&1; rc=$?; grep SMOKE /tmp/smoke.log; exit $rc
+      - name: Keep an already-published incremental update (built on Linux by build/build-layer.js)
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="mac-v${{ steps.v.outputs.version }}"
+          if gh release view "$TAG" --json assets -q '.assets[].name' 2>/dev/null | grep -qx app-update.asar; then
+            echo "keep=1" >> "$GITHUB_OUTPUT"
+            echo "::notice::$TAG already has app-update.asar/json — keeping them (sha256 in app-update.json must keep matching); only the DMG is added."
+          else
+            echo "keep=0" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build incremental update package (app layer)
+        if: steps.existing.outputs.keep != '1'
         run: |
           V="${{ steps.v.outputs.version }}"; TAG="mac-v$V"
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG"
@@ -81,7 +94,7 @@ jobs:
         run: |
           V="${{ steps.v.outputs.version }}"; TAG="mac-v$V"
           DMG_MB=$(( $(stat -f%z release/*.dmg) / 1048576 ))
-          UPD_MB=$(node -e 'console.log((require("fs").statSync("release/app-update.asar").size/1048576).toFixed(1))')
+          UPD_MB=$(node -e 'console.log((require("fs").statSync("release/app-update.asar").size/1048576).toFixed(1))' 2>/dev/null || echo "?")
           NOTES=release-notes.md
           {
             echo "## 抖音知识库 macOS 版 ${V}（预览版）"
@@ -96,8 +109,13 @@ jobs:
             echo "使用说明见 [mac/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/mac/README.md)"
           } > "$NOTES"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 ${V}（预览）" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
-          gh release upload "$TAG" release/*.dmg release/app-update.asar release/app-update.json --clobber
+          if [ "${{ steps.existing.outputs.keep }}" = "1" ]; then
+            gh release upload "$TAG" release/*.dmg   # 不覆盖已发布的增量包
+          else
+            gh release upload "$TAG" release/*.dmg release/app-update.asar release/app-update.json --clobber
+          fi
       - name: Update the mac-latest channel (mirror-friendly manifest)
+        if: steps.existing.outputs.keep != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
