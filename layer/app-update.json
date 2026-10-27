@@ -1,0 +1,12 @@
+{
+  "version": "0.2.3",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "2d13234b5b99ae5c59a7f4c5979f70b41791472c2ea8455ee1165c04bff792f2",
+  "size": 9894709,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.3/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.3",
+  "notes": "语音识别引擎改成下拉选择，只显示当前引擎的模型；设置页随窗口放大自适应宽度",
+  "publishedAt": "2026-10-27T15:56:56.772Z"
+}
