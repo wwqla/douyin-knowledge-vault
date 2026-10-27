@@ -117,6 +117,9 @@ def extract(*, base_url: str, api_key: str | None, model: str, title: str, autho
             {"role": "user", "content": build_user_prompt(title, author, description, transcript)},
         ],
     }
+    zhipu = "bigmodel.cn" in base_url or "zhipuai" in base_url
+    if zhipu and model.lower().startswith(("glm-4.5", "glm-4.6", "glm-4.7", "glm-5")):
+        body["thinking"] = {"type": "disabled"}  # 提炼不需要深度思考，关掉更快
     headers = {"Authorization": f"Bearer {api_key}"}
     own = client is None
     client = client or httpx.Client(timeout=timeout)
@@ -124,6 +127,10 @@ def extract(*, base_url: str, api_key: str | None, model: str, title: str, autho
         r = client.post(url, json=body, headers=headers)
         if r.status_code == 400 and "response_format" in r.text:
             body.pop("response_format")  # some compatible providers reject it
+            r = client.post(url, json=body, headers=headers)
+        if r.status_code == 400 and zhipu and '"1211"' in r.text and body["model"] != "glm-4.7-flash":
+            body["model"] = "glm-4.7-flash"  # 智谱模型编码不存在：换当前免费模型重试
+            body["thinking"] = {"type": "disabled"}
             r = client.post(url, json=body, headers=headers)
         if r.status_code >= 400:
             raise ExtractError(f"LLM HTTP {r.status_code}: {r.text[:300]}")

@@ -132,7 +132,7 @@ function buildKbContext(major, notes, maxChars = 40000) {
 
 // 接口地址换成别家、模型却还是默认 deepseek-chat 时，自动换成该平台的默认模型（否则会报「模型不存在」）
 const PROVIDER_MODELS = [
-  [/bigmodel\.cn|zhipuai/i, "glm-4-flash"],
+  [/bigmodel\.cn|zhipuai/i, "glm-4.7-flash"],
   [/dashscope\.aliyuncs\.com/i, "qwen-plus"],
   [/moonshot\.(cn|ai)/i, "moonshot-v1-8k"],
   [/siliconflow\.cn/i, "deepseek-ai/DeepSeek-V3"],
@@ -144,7 +144,9 @@ function defaultModelFor(base) {
 }
 function fixModel(base, model) {
   const m = String(model || "").trim();
-  if (m && m !== "deepseek-chat") return m;
+  // 智谱已下线/改名的旧模型编码（glm-4-flash、glm-4.5-flash）也换成当前免费的 glm-4.7-flash
+  const stale = /bigmodel\.cn|zhipuai/i.test(String(base || "")) && /^glm-4(\.5)?-flash$/i.test(m);
+  if (m && m !== "deepseek-chat" && !stale) return m;
   return defaultModelFor(base) || m || "deepseek-chat";
 }
 module.exports = { fixModel, defaultModelFor, chat, friendlyAIError, llmConfig, parseJsonLoose, CARD_SYSTEM, buildCardPrompt, normalizeCard, buildKbContext };

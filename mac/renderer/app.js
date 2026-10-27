@@ -1610,7 +1610,7 @@ function fillSettingsForm() {
     // 换了接口地址、模型还是 deepseek-chat 时，自动填上该平台的默认模型
     $("set-base").addEventListener("change", () => {
       const b = $("set-base").value, m = $("set-model").value.trim();
-      const pick = [[/bigmodel\.cn|zhipuai/i, "glm-4-flash"], [/dashscope\.aliyuncs\.com/i, "qwen-plus"], [/moonshot\.(cn|ai)/i, "moonshot-v1-8k"], [/siliconflow\.cn/i, "deepseek-ai/DeepSeek-V3"], [/api\.openai\.com/i, "gpt-4o-mini"], [/deepseek\.com/i, "deepseek-chat"]].find(([re]) => re.test(b));
+      const pick = [[/bigmodel\.cn|zhipuai/i, "glm-4.7-flash"], [/dashscope\.aliyuncs\.com/i, "qwen-plus"], [/moonshot\.(cn|ai)/i, "moonshot-v1-8k"], [/siliconflow\.cn/i, "deepseek-ai/DeepSeek-V3"], [/api\.openai\.com/i, "gpt-4o-mini"], [/deepseek\.com/i, "deepseek-chat"]].find(([re]) => re.test(b));
       if (pick && (!m || m === "deepseek-chat" || /^(glm-|qwen|moonshot|gpt-|deepseek-ai\/)/.test(m))) $("set-model").value = pick[1];
     });
   }
