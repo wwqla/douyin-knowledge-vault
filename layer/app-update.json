@@ -1,0 +1,12 @@
+{
+  "version": "0.2.10",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "57d86c5197748811117621bb1dae74d574a027ebf854736c133a864ef43b29f1",
+  "size": 9940855,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.10/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.10",
+  "notes": "启动更快：周报和成就统计等首屏画完再算，并且合并成一次；知识库文件监听延后启动",
+  "publishedAt": "2026-10-27T17:35:33.212Z"
+}
