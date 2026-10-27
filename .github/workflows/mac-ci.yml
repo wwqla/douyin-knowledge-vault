@@ -73,7 +73,7 @@ jobs:
           retention-days: 7
 
   engine-install:
-    # 模拟应用内「一键安装」：在干净的 macOS 上跑内置的 install-worker.sh（mlx 版），再自检
+    # 模拟应用内「一键安装」：在干净的 macOS 上跑内置的 install-worker.sh（SenseVoice + Whisper），自检，再真实转写一段中文
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +84,43 @@ jobs:
           cp -R mac/engine/worker "$FAVVAULT_HOME/src/worker"
           rm -rf "$FAVVAULT_HOME/src/worker/tests"
           env -i HOME="$HOME" FAVVAULT_HOME="$FAVVAULT_HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
-            /bin/bash mac/engine/install-worker.sh "$FAVVAULT_HOME/src/worker" mlx | tee install.log
+            /bin/bash mac/engine/install-worker.sh "$FAVVAULT_HOME/src/worker" mlx,sensevoice | tee install.log
           grep -q '^DONE$' install.log
-          "$FAVVAULT_HOME/venv/bin/python" -m favvault_worker doctor
+          "$FAVVAULT_HOME/venv/bin/python" -m favvault_worker doctor | tee doctor.json
+          grep -q '"sensevoice": true' doctor.json
+          grep -q '"mlx": true' doctor.json
           "$FAVVAULT_HOME/venv/bin/python" -m favvault_worker process --help | grep -- --cookies
+          echo "FAVVAULT_HOME=$FAVVAULT_HOME" >> "$GITHUB_ENV"
+      - name: Real SenseVoice transcription (say -v Tingting → aiff → worker)
+        run: |
+          set -euo pipefail
+          PY="$FAVVAULT_HOME/venv/bin/python"
+          export HF_HUB_CACHE="$RUNNER_TEMP/hf-cache"
+          "$PY" -m favvault_worker download-model --engine sensevoice | tail -n 3
+          # 第二次：模型已在共享缓存里，必须跳过下载
+          "$PY" -m favvault_worker download-model --engine sensevoice > again.jsonl
+          if grep -q model_download again.jsonl; then echo "model downloaded twice"; cat again.jsonl; exit 1; fi
+          "$PY" -m favvault_worker models | tee models.json
+          ls -la "$HF_HUB_CACHE"/models--csukuangfj--sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/snapshots/*/
+          TEXT="今天天气很好，我们一起去公园散步吧。"
+          VOICE="$(say -v '?' | grep -E 'zh_CN' | head -n1 | sed -E 's/ +zh_CN.*//' || true)"
+          echo "voice: ${VOICE:-none}"
+          if [ -n "$VOICE" ] && say -v "$VOICE" -o "$RUNNER_TEMP/zh.aiff" "$TEXT"; then SAMPLE="$RUNNER_TEMP/zh.aiff"; EXPECT=1
+          else
+            curl -fsSL -o "$RUNNER_TEMP/zh.wav" https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/test_wavs/zh.wav
+            SAMPLE="$RUNNER_TEMP/zh.wav"; EXPECT=0
+          fi
+          time "$PY" -m favvault_worker transcribe "$SAMPLE" --asr sensevoice | tee tr.jsonl
+          python3 - "$EXPECT" <<'PY'
+          import json, re, sys
+          ev = [json.loads(l) for l in open("tr.jsonl") if l.strip().startswith("{")]
+          tr = [e for e in ev if e["event"] == "transcript"]
+          assert tr, ev[-3:]
+          text = tr[0]["text"]
+          print("SENSEVOICE TRANSCRIPT:", text)
+          cjk = re.findall(r"[\u4e00-\u9fff]", text)
+          assert len(cjk) >= 4, "expected Chinese output"
+          if sys.argv[1] == "1":
+              hits = sum(w in text for w in ("今天", "天气", "公园", "散步"))
+              assert hits >= 2, f"transcript too far from the spoken text ({hits}/4 keywords)"
+          PY

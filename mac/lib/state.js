@@ -155,7 +155,7 @@ const STAGE_TEXT = {
   transcribe: "🎙 本地语音转写",
   extract: "🧠 AI 提炼知识",
   write: "📝 写入笔记",
-  model_download: "⬇ 下载 Whisper 模型（只需一次）",
+  model_download: "⬇ 下载语音识别模型（只需一次，存到 Hugging Face 共享缓存）",
 };
 const STATUS_TEXT = { written: "已生成笔记", skipped: "已跳过", failed: "失败", media_frozen: "已跳过（无可用语音）" };
 
@@ -221,7 +221,7 @@ function formatEvent(ev, progressState = {}) {
     case "error":
       return `  ✗ ${ev.code === "lock_busy" ? "另一个处理进程正在运行，请稍后" : friendlyError(ev.message)}\n`;
     case "model_ready":
-      return "  ✓ Whisper 模型已就绪\n";
+      return `  ✓ ${ev.engine === "sensevoice" ? "SenseVoice" : "Whisper"} 模型已就绪\n`;
     default:
       return "";
   }

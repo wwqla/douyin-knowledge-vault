@@ -396,7 +396,7 @@
       <div class="settings-grid">
         <div class="panel engine-panel" id="engine-panel">
           <div class="panel-title">处理组件（Mac 版） <span class="save-hint" id="engine-badge">检测中…</span></div>
-          <p class="hint" style="margin-top:0">处理收藏需要下载工具（yt-dlp）、本地语音识别（Whisper）和 Python 运行环境。全部装在本应用的数据目录里，<b>不需要终端、不需要 Homebrew</b>，卸载应用时删除即可。</p>
+          <p class="hint" style="margin-top:0">处理收藏需要下载工具（yt-dlp）、本地语音识别（SenseVoice 或 Whisper）和 Python 运行环境。全部装在本应用的数据目录里，<b>不需要终端、不需要 Homebrew</b>，卸载应用时删除即可。</p>
           <div class="engine-step">
             <div class="engine-step-head"><b>① 处理组件</b><span class="engine-state" id="engine-state">—</span></div>
             <div class="bar-track"><div class="bar-fill" id="engine-bar"></div></div>
@@ -404,10 +404,32 @@
             <button class="btn primary" id="btn-engine-install">一键安装</button>
           </div>
           <div class="engine-step">
-            <div class="engine-step-head"><b>② 语音识别模型</b><span class="engine-state" id="model-state">—</span></div>
-            <div class="bar-track"><div class="bar-fill" id="model-bar"></div></div>
-            <div class="engine-msg" id="model-msg">Whisper large-v3-turbo，约 1.6 GB，只需下载一次（自动尝试国内镜像）。</div>
-            <button class="btn" id="btn-model-download">下载语音识别模型</button>
+            <div class="engine-step-head"><b>② 语音识别引擎</b><span class="engine-state" id="model-state">—</span></div>
+            <div class="asr-choice" id="asr-choice">
+              <label class="asr-opt"><input type="radio" name="asr-engine" value="sensevoice" /> <span><b>SenseVoice</b>（推荐中文，更快更准，约 230 MB）</span></label>
+              <label class="asr-opt"><input type="radio" name="asr-engine" value="whisper" /> <span><b>Whisper large-v3-turbo</b>（多语言，约 1.6 GB）</span></label>
+            </div>
+            <div class="model-row" id="model-row-sensevoice">
+              <div class="model-row-head"><span>SenseVoice Small · int8</span><span class="engine-state" id="model-state-sensevoice">—</span></div>
+              <div class="bar-track"><div class="bar-fill" id="model-bar-sensevoice"></div></div>
+              <div class="model-row-foot"><span class="engine-msg" id="model-msg-sensevoice"></span><button class="btn small" id="btn-model-sensevoice">下载</button></div>
+            </div>
+            <div class="model-row" id="model-row-whisper">
+              <div class="model-row-head"><span>Whisper large-v3-turbo</span><span class="engine-state" id="model-state-whisper">—</span></div>
+              <div class="bar-track"><div class="bar-fill" id="model-bar-whisper"></div></div>
+              <div class="model-row-foot"><span class="engine-msg" id="model-msg-whisper"></span><button class="btn small" id="btn-model-whisper">下载</button></div>
+            </div>
+            <div class="model-row model-loc">
+              <div class="model-row-head"><span>模型位置</span><span class="engine-state" id="models-dir-kind">—</span></div>
+              <div class="engine-msg models-dir" id="models-dir">—</div>
+              <div class="model-loc-actions">
+                <button class="btn small" id="btn-models-reveal">在访达中显示</button>
+                <button class="btn small" id="btn-models-choose">更改文件夹…</button>
+                <button class="btn small" id="btn-models-reset" hidden>恢复默认</button>
+              </div>
+              <div class="engine-msg">模型存在标准 Hugging Face 缓存里，其他使用 Hugging Face 的软件可直接共用；已经下载过的模型不会重复下载。</div>
+            </div>
+            <div class="engine-msg" id="model-msg"></div>
           </div>
           <p class="hint">安装约需 3~10 分钟（视网速），请保持联网。音频只在本机转写，不会上传。</p>
         </div>
@@ -552,7 +574,7 @@
           <label>每日处理条数（不含定时任务：仅限制在总览手动「开始处理收藏」时每次最多处理多少条；定时任务每天 500 条上限不受此影响）
             <input id="set-dailylimit" type="number" min="1" max="3000" step="1" placeholder="默认 100" />
           </label>
-          <label>Whisper 模型（Hugging Face 仓库名，留空用默认 large-v3-turbo；改了需重新下载模型）
+          <label>Whisper 模型（仅在识别引擎选 Whisper 时使用；Hugging Face 仓库名，留空用默认 large-v3-turbo）
             <input id="set-whisper" type="text" />
           </label>
           <div hidden>

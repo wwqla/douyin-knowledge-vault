@@ -2206,3 +2206,15 @@ body.skin-light .fs-row .fs-val { color: #0e7490; }
 .font-opt small { display: block; margin-top: 2px; font-size: 0.857em; color: var(--text-3); font-family: inherit; }
 .font-opt.busy { opacity: 0.7; cursor: progress; }
 .font-bar-track { margin-top: 10px; }
+
+/* 语音识别引擎 / 模型 */
+.asr-choice { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; font-size: 13px; }
+.asr-opt { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; }
+.asr-opt input { width: auto; margin: 0; }
+.model-row { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(124, 227, 255, 0.10); }
+.model-row.current { border-color: rgba(124, 227, 255, 0.45); }
+.model-row-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; margin-bottom: 6px; }
+.model-row-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.model-row-foot .engine-msg { margin: 6px 0 0; }
+.model-loc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.models-dir { font-family: ui-monospace, Menlo, monospace; margin: 2px 0; }

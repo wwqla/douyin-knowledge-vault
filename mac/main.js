@@ -13,6 +13,7 @@ const vault = require("./lib/vault");
 const st = require("./lib/state");
 const llm = require("./lib/llm");
 const launchd = require("./lib/launchd");
+const asr = require("./lib/asr");
 const { createUpdater } = require("./lib/updater");
 const { createFonts } = require("./lib/fonts");
 
@@ -58,6 +59,8 @@ const DEFAULT_SETTINGS = {
   llmApiKey: "",
   llmModel: "deepseek-chat",
   whisperModel: "mlx-community/whisper-large-v3-turbo",
+  asrEngine: "sensevoice", // sensevoice | whisper；老用户（settings.json 里没有这个字段）保持 whisper，见 loadSettings
+  modelsDir: "",           // 自定义模型文件夹（作为 HF_HUB_CACHE 交给 worker）；空 = 标准 Hugging Face 缓存
   startDate: "",
   startDateAcknowledged: false,
   processMode: "time",
@@ -80,8 +83,10 @@ const DEFAULT_SETTINGS = {
 
 function loadSettings() {
   let s;
-  try { s = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) }; }
-  catch { s = { ...DEFAULT_SETTINGS }; }
+  let raw = null;
+  try { raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")); } catch (err) { if (err && err.code !== "ENOENT") raw = {}; }
+  s = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  s.asrEngine = asr.resolveAsrEngine(raw);
   if (!s.vaultPath) s.vaultPath = DEFAULT_SETTINGS.vaultPath;
   s.schedule = { ...DEFAULT_SETTINGS.schedule, ...(s.schedule || {}) };
   return s;
@@ -276,6 +281,31 @@ async function fetchFavorites({ collectsId = "", maxItems = 3000, onPage } = {})
 // ---------------- 处理引擎（FavVault worker） ----------------
 let engineCache = null; // 最近一次 doctor 结果
 
+// 从访达打开的应用读不到 ~/.zshrc 里的 HF_HOME / HF_HUB_CACHE：启动时问一次登录 shell，与其他软件共用同一个模型缓存
+let shellHfEnv = {};
+function probeShellHfEnv() {
+  return new Promise((resolve) => {
+    const sh = process.env.SHELL && /(zsh|bash)$/.test(process.env.SHELL) ? process.env.SHELL : "/bin/zsh";
+    try {
+      execFile(sh, ["-ilc", asr.SHELL_PROBE], { timeout: 4000, env: { HOME: os.homedir(), USER: os.userInfo().username, PATH: "/usr/bin:/bin" } }, (_err, stdout) => {
+        shellHfEnv = asr.parseShellProbe(stdout);
+        resolve(shellHfEnv);
+      });
+    } catch { resolve({}); }
+  });
+}
+
+function modelsCacheDir(s) {
+  return asr.hfHubCache({ ...asr.modelEnv(s || loadSettings(), process.env, shellHfEnv) }, os.homedir());
+}
+function modelsInfo(s) {
+  s = s || loadSettings();
+  const dir = modelsCacheDir(s);
+  const custom = !!(s.modelsDir && s.modelsDir.trim());
+  const def = asr.hfHubCache(asr.modelEnv({}, process.env, shellHfEnv), os.homedir());
+  return { cacheDir: dir, custom, defaultDir: def, models: asr.allModelStatus(dir) };
+}
+
 function engineInstalled() {
   return fs.existsSync(VENV_PY) && fs.existsSync(path.join(ENGINE_HOME, "venv", "bin", "favvault-worker"));
 }
@@ -288,8 +318,9 @@ function workerEnv(s) {
     FAVVAULT_LLM_BASE_URL: s.llmBaseUrl || "",
     FAVVAULT_LLM_MODEL: s.llmModel || "deepseek-chat",
     FAVVAULT_LLM_API_KEY: s.llmApiKey || "",
-    FAVVAULT_ASR_ENGINE: IS_ARM ? "mlx" : "faster-whisper",
-    FAVVAULT_ASR_MODEL: IS_ARM ? (s.whisperModel || "") : "",
+    FAVVAULT_ASR_ENGINE: asr.workerEngine(s.asrEngine, IS_ARM),
+    FAVVAULT_ASR_MODEL: s.asrEngine === "whisper" && IS_ARM ? (s.whisperModel || "") : "",
+    ...asr.modelEnv(s, process.env, shellHfEnv),
     PYTHONUNBUFFERED: "1",
     PYTHONIOENCODING: "utf-8",
     HF_HUB_DISABLE_TELEMETRY: "1",
@@ -339,7 +370,7 @@ async function engineDoctor() {
     return engineCache;
   }
   const whisperReady = IS_ARM ? !!(ev.mlx && ev.whisperReady) : true; // Intel 用 faster-whisper，首次转写时自动下载小模型
-  engineCache = { installed: true, ffmpeg: !!ev.ffmpeg, ytdlp: !!ev.ytdlp, mlx: !!ev.mlx, whisperReady };
+  engineCache = { installed: true, ffmpeg: !!ev.ffmpeg, ytdlp: !!ev.ytdlp, mlx: !!ev.mlx, whisperReady, sensevoice: !!ev.sensevoice };
   return engineCache;
 }
 
@@ -356,7 +387,7 @@ function copyTree(src, dst, filter) {
   }
 }
 
-async function installEngine() {
+async function installEngine(opts = {}) {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
   const script = path.join(ENGINE_SRC, "install-worker.sh");
   const src = path.join(ENGINE_SRC, "worker");
@@ -372,7 +403,8 @@ async function installEngine() {
     // 脚本可能在 .asar 里（增量应用层），bash 读不了：先拷出来
     const scriptCopy = path.join(ENGINE_HOME, "src", "install-worker.sh");
     fs.writeFileSync(scriptCopy, fs.readFileSync(script));
-    const extra = IS_ARM ? "mlx" : "cpu";
+    const s0 = loadSettings();
+    const extra = opts.extra || asr.installExtras(opts.engine || s0.asrEngine, IS_ARM, engineCache);
     return await new Promise((resolve) => {
       const child = spawn("/bin/bash", [scriptCopy, workDir, extra], {
         env: { ...process.env, FAVVAULT_HOME: ENGINE_HOME, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
@@ -410,29 +442,43 @@ async function installEngine() {
   }
 }
 
-let modelDownloading = false;
-async function downloadModel() {
+let modelDownloading = false; // 正在下载的引擎名，或 false
+/** 下载某个引擎的模型（默认当前引擎）到 Hugging Face 缓存；需要的组件没装时先装上 */
+async function downloadModel(engineKey) {
   if (!engineInstalled()) return { ok: false, error: "请先安装处理组件" };
-  if (!IS_ARM) return { ok: true, message: "Intel Mac 使用 faster-whisper，首次转写时会自动下载小模型" };
+  const s = loadSettings();
+  const eng = asr.normEngine(engineKey || s.asrEngine);
+  if (eng === "whisper" && !IS_ARM) return { ok: true, message: "Intel Mac 使用 faster-whisper，首次转写时会自动下载小模型" };
   if (modelDownloading) return { ok: false, error: "模型正在下载中" };
-  modelDownloading = true;
+  const spec = asr.ENGINES[eng];
+  modelDownloading = eng;
+  const prog = (pct, msg) => broadcast("engine:progress", { kind: "model", engine: eng, pct, msg });
   try {
-    broadcast("engine:progress", { kind: "model", pct: 0, msg: "连接模型下载服务器…" });
-    const s = loadSettings();
-    const r = await runWorker(["download-model", "--model", s.whisperModel || ""], {
+    let doc = engineCache && engineCache.installed ? engineCache : await engineDoctor();
+    if (!doc[spec.module]) {
+      prog(0, `先安装 ${spec.label} 组件…`);
+      const r = await installEngine({ engine: eng, extra: asr.installExtras(eng, IS_ARM, doc) });
+      if (!r.ok) return { ok: false, error: r.error };
+      doc = engineCache;
+      if (!doc || !doc[spec.module]) return { ok: false, error: `${spec.label} 组件安装后自检未通过` };
+    }
+    prog(0, "连接模型下载服务器…");
+    const args = ["download-model", "--engine", eng === "whisper" ? "mlx" : "sensevoice"];
+    if (eng === "whisper" && s.whisperModel) args.push("--model", s.whisperModel);
+    const r = await runWorker(args, {
       onEvent: (ev) => {
         if (ev.event === "progress" && ev.stage === "model_download" && ev.total) {
           const pct = Math.min(99, Math.floor((ev.done / ev.total) * 100));
-          broadcast("engine:progress", { kind: "model", pct, msg: `正在下载语音识别模型 ${(ev.done / 1048576).toFixed(0)} / ${(ev.total / 1048576).toFixed(0)} MB` });
+          prog(pct, `正在下载 ${spec.label} 模型 ${(ev.done / 1048576).toFixed(0)} / ${(ev.total / 1048576).toFixed(0)} MB`);
         } else if (ev.event === "log" && /downloading .* from (.*)/.test(ev.message || "")) {
-          broadcast("engine:progress", { kind: "model", pct: 1, msg: "下载源：" + /from (.*)$/.exec(ev.message)[1] });
+          prog(1, "下载源：" + /from (.*)$/.exec(ev.message)[1]);
         }
       },
     });
     const ready = r.events.find((e) => e.event === "model_ready");
     if (ready) {
-      engineCache = { ...(engineCache || {}), installed: true, whisperReady: true, mlx: true };
-      broadcast("engine:progress", { kind: "model", pct: 100, msg: "语音识别模型已就绪" });
+      if (eng === "whisper") engineCache = { ...(engineCache || {}), installed: true, whisperReady: true, mlx: true };
+      prog(100, `${spec.label} 模型已就绪`);
       return { ok: true, path: ready.path };
     }
     const err = r.events.find((e) => e.event === "error");
@@ -442,12 +488,19 @@ async function downloadModel() {
   }
 }
 
+function asrReadyNow(s, doc) {
+  return asr.engineReady(s.asrEngine, doc, modelsInfo(s).models, IS_ARM);
+}
+
 /** 处理前检查：组件、模型、知识库、登录。返回中文错误或空串 */
 async function preflight(s, { needLogin = true } = {}) {
   if (!engineInstalled()) return "还没安装处理组件：请到「设置 → 处理组件」点「一键安装」";
   const doc = engineCache && engineCache.installed ? engineCache : await engineDoctor();
   if (!doc.installed) return doc.error || "处理组件不可用：请到「设置 → 处理组件」重新安装";
-  if (!doc.whisperReady) return "还没下载语音识别模型：请到「设置 → 处理组件」点「下载语音识别模型」";
+  if (!asrReadyNow(s, doc)) {
+    const spec = asr.ENGINES[s.asrEngine] || asr.ENGINES.sensevoice;
+    return `还没准备好 ${spec.label} 语音识别模型：请到「设置 → 处理组件」点「下载」`;
+  }
   if (!s.vaultPath) return "还没设置知识库路径（设置 → 项目配置）";
   ensureVaultDir(s);
   if (!s.llmApiKey) return "还没填写 API Key：请到「设置 → AI 接口配置」填写，否则无法生成知识笔记";
@@ -667,12 +720,54 @@ ipcMain.handle("vault:write", (_e, { path: p, content }) => {
 ipcMain.handle("vault:graph", (_e, vaultPath) => vault.graph(vaultPath || loadSettings().vaultPath));
 
 // ---------------- IPC：处理组件 ----------------
+function engineStatusPayload(doc) {
+  const s = loadSettings();
+  const info = modelsInfo(s);
+  const asrReady = asr.engineReady(s.asrEngine, doc, info.models, IS_ARM);
+  return {
+    ok: true, ...doc, arch: process.arch, engineHome: ENGINE_HOME, installing, modelDownloading,
+    asrEngine: s.asrEngine, asrReady,
+    // 旧字段：当前引擎的模型是否就绪 / 是否需要单独下载
+    whisperReady: asrReady, needsModel: s.asrEngine === "sensevoice" || IS_ARM,
+    isArm: IS_ARM, modelsDir: info.cacheDir, modelsDirCustom: info.custom, modelsDirDefault: info.defaultDir, models: info.models,
+    engines: Object.fromEntries(asr.ENGINE_KEYS.map((k) => [k, { title: asr.ENGINES[k].title, label: asr.ENGINES[k].label, repo: asr.ENGINES[k].repo, size: asr.ENGINES[k].size }])),
+  };
+}
 ipcMain.handle("engine:status", async (_e, opts) => {
   const doc = opts && opts.cached && engineCache ? engineCache : await engineDoctor();
-  return { ok: true, ...doc, arch: process.arch, needsModel: IS_ARM, engineHome: ENGINE_HOME, installing, modelDownloading };
+  return engineStatusPayload(doc);
 });
 ipcMain.handle("engine:install", () => installEngine());
-ipcMain.handle("engine:downloadModel", () => downloadModel());
+ipcMain.handle("engine:downloadModel", (_e, engineKey) => downloadModel(engineKey));
+ipcMain.handle("engine:setAsr", async (_e, engineKey) => {
+  if (!asr.ENGINE_KEYS.includes(engineKey)) return { ok: false, error: "未知的识别引擎" };
+  saveSettings({ asrEngine: engineKey });
+  return engineStatusPayload(engineCache || await engineDoctor());
+});
+ipcMain.handle("engine:revealModels", async (_e, engineKey) => {
+  const info = modelsInfo();
+  const m = engineKey && info.models[engineKey];
+  let target = m && m.downloaded ? m.repoDir : info.cacheDir;
+  try { fs.mkdirSync(info.cacheDir, { recursive: true }); } catch { /* 只读位置：打开最近的上级 */ }
+  while (target && !fs.existsSync(target) && path.dirname(target) !== target) target = path.dirname(target);
+  const r = await shell.openPath(target);
+  return { ok: r === "", path: target, error: r || undefined };
+});
+ipcMain.handle("engine:chooseModelsDir", async () => {
+  const s = loadSettings();
+  const r = await dialog.showOpenDialog(mainWindow || undefined, {
+    title: "选择模型文件夹（Hugging Face 缓存）",
+    message: "模型会下载到这个文件夹，其他使用 Hugging Face 的软件把 HF_HUB_CACHE 指向它即可共用",
+    defaultPath: modelsCacheDir(s), properties: ["openDirectory", "createDirectory"],
+  });
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+  saveSettings({ modelsDir: r.filePaths[0] });
+  return engineStatusPayload(engineCache || await engineDoctor());
+});
+ipcMain.handle("engine:resetModelsDir", async () => {
+  saveSettings({ modelsDir: "" });
+  return engineStatusPayload(engineCache || await engineDoctor());
+});
 
 // ---------------- IPC：流水线 ----------------
 ipcMain.on("pipeline:cancel", () => {
@@ -1377,6 +1472,8 @@ if (gotLock) {
   app.whenReady().then(async () => {
     fs.mkdirSync(VAR_DIR, { recursive: true });
     const s = loadSettings();
+    if (!fs.existsSync(SETTINGS_FILE)) { try { saveSettings({ asrEngine: s.asrEngine }); } catch { /* ignore */ } } // 新安装锁定默认引擎
+    probeShellHfEnv().catch(() => {});
     ensureVaultDir(s);
     if (SCHEDULED) {
       if (app.dock) app.dock.hide();

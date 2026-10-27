@@ -1,6 +1,6 @@
 [project]
 name = "favvault-worker"
-version = "0.1.0"
+version = "0.2.0"
 description = "FavVault pipeline worker: favorites -> transcript -> LLM notes -> Obsidian Markdown"
 requires-python = ">=3.10"
 dependencies = [
@@ -12,9 +12,11 @@ dependencies = [
 [project.optional-dependencies]
 # Apple Silicon: fast, accurate local Whisper
 mlx = ["mlx-whisper>=0.4", "huggingface_hub>=0.23"]
+# SenseVoiceSmall via sherpa-onnx (CPU, no PyTorch, ~230 MB int8 model): best for Chinese
+sensevoice = ["sherpa-onnx>=1.12", "huggingface_hub>=0.23", "numpy>=1.24"]
 # Intel Macs / fallback
 cpu = ["faster-whisper>=1.0"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "numpy>=1.24"]
 
 [project.scripts]
 favvault-worker = "favvault_worker.cli:main"

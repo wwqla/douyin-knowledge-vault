@@ -13,6 +13,9 @@ from .pipeline import RETRY_DELAY_SECONDS, process_url
 from .state import StateDB
 
 
+ASR_CHOICES = ["auto", "apple", "sensevoice", "mlx", "faster-whisper"]
+
+
 def apply_overrides(s, args):
     """Command-line flags win over settings.json / environment."""
     from pathlib import Path
@@ -78,32 +81,65 @@ def cmd_reset(args) -> int:
 def cmd_download_model(args) -> int:
     from . import transcribe
 
+    engine = args.engine or "mlx"
+    spec = transcribe.MODELS[engine]
+    repo = args.model or spec["repo"]
+    files = spec["files"]
     try:
-        path = transcribe.ensure_hf_model(args.model or transcribe.MLX_DEFAULT)
+        path = transcribe.ensure_hf_model(repo, files)
     except Exception as e:  # noqa: BLE001
         emit("error", code="model_download", message=str(e))
         return 1
-    emit("model_ready", path=path)
+    emit("model_ready", engine=engine, path=path, cacheDir=str(transcribe.hf_hub_cache()))
+    return 0
+
+
+def cmd_models(args) -> int:
+    """Where models live and which are downloaded (no network)."""
+    from . import transcribe
+
+    emit("models", cacheDir=str(transcribe.hf_hub_cache()),
+         models=[transcribe.model_status(e) for e in transcribe.MODELS])
+    return 0
+
+
+def cmd_transcribe(args) -> int:
+    """Transcribe one local audio/video file and print the text (debugging / CI check)."""
+    from pathlib import Path
+
+    from . import transcribe
+
+    s = apply_overrides(load_settings(), args)
+    try:
+        r = transcribe.transcribe(Path(args.file), s.asr_engine, s.asr_model)
+    except Exception as e:  # noqa: BLE001
+        emit("error", code="transcribe", message=f"{type(e).__name__}: {e}")
+        return 1
+    emit("transcript", engine=r["engine"], model=r["model"], language=r["language"],
+         text=r["text"], segments=r["segments"])
     return 0
 
 
 def cmd_doctor(args) -> int:
     import importlib.util
 
-    from . import tools
-    from .transcribe import MLX_DEFAULT
+    from . import tools, transcribe
 
-    whisper_ready = False
-    if importlib.util.find_spec("mlx_whisper"):
+    has_mlx = bool(importlib.util.find_spec("mlx_whisper"))
+    has_sv = bool(importlib.util.find_spec("sherpa_onnx"))
+    whisper_ready = has_mlx and transcribe.model_status("mlx")["downloaded"]
+    if has_mlx and not whisper_ready:  # also accept what huggingface_hub itself can resolve
         try:
             from huggingface_hub import snapshot_download  # type: ignore
 
-            snapshot_download(MLX_DEFAULT, local_files_only=True)
+            snapshot_download(transcribe.MLX_DEFAULT, local_files_only=True)
             whisper_ready = True
         except Exception:  # noqa: BLE001
             pass
     emit("doctor", ffmpeg=tools.ffmpeg(), ytdlp=bool(importlib.util.find_spec("yt_dlp")),
-         mlx=bool(importlib.util.find_spec("mlx_whisper")), whisperReady=whisper_ready)
+         mlx=has_mlx, whisperReady=whisper_ready,
+         sensevoice=has_sv, senseVoiceReady=has_sv and transcribe.model_status("sensevoice")["downloaded"],
+         hfCache=str(transcribe.hf_hub_cache()))
     return 0
 
 
@@ -118,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("--vault", help="override the vault path")
     pp.add_argument("--cookies-from-browser", help="safari | chrome | edge | firefox")
     pp.add_argument("--cookies", help="Netscape cookies.txt (e.g. exported after QR login)")
-    pp.add_argument("--asr", choices=["auto", "apple", "mlx", "faster-whisper"])
+    pp.add_argument("--asr", choices=ASR_CHOICES)
     pp.add_argument("--retry-delay", type=float, default=RETRY_DELAY_SECONDS,
                     help="seconds before the single retry; negative disables")
     pp.set_defaults(func=cmd_process)
@@ -126,9 +162,15 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="counts per status and lock state").set_defaults(func=cmd_status)
     sub.add_parser("reset", help="clear a stuck sync.lock (refuses if still running)").set_defaults(func=cmd_reset)
 
-    dm = sub.add_parser("download-model", help="download the Whisper model with progress events")
-    dm.add_argument("--model", default="")
+    dm = sub.add_parser("download-model", help="download a speech model into the Hugging Face cache, with progress")
+    dm.add_argument("--engine", choices=["mlx", "sensevoice"], default="mlx")
+    dm.add_argument("--model", default="", help="override the Hugging Face repo")
     dm.set_defaults(func=cmd_download_model)
+    sub.add_parser("models", help="model cache location and download status").set_defaults(func=cmd_models)
+    tp = sub.add_parser("transcribe", help="transcribe a local audio/video file")
+    tp.add_argument("file")
+    tp.add_argument("--asr", choices=ASR_CHOICES)
+    tp.set_defaults(func=cmd_transcribe)
     sub.add_parser("doctor", help="report installed components").set_defaults(func=cmd_doctor)
 
     args = p.parse_args(argv)

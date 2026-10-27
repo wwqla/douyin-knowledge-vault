@@ -18,18 +18,17 @@
   function renderEngine() {
     const e = engine || {};
     const badge = $m("engine-badge");
-    const ready = e.installed && e.whisperReady;
+    const ready = e.installed && e.asrReady;
     if (badge) {
       badge.textContent = ready ? "已就绪 ✓" : (e.installed ? "还差语音识别模型" : "未安装");
       badge.style.color = ready ? "#7ee787" : "#fbbf24";
     }
     const ib = $m("btn-engine-install");
-    const mb = $m("btn-model-download");
     if (!installBusy) {
       if (e.installed) {
         setText("engine-state", "已安装 ✓");
         setBar("engine-bar", 100);
-        setText("engine-msg", `下载工具 ${e.ytdlp ? "✓" : "✗"} · ffmpeg ${e.ffmpeg ? "✓" : "✗"} · 本地 Whisper ${e.mlx || !e.needsModel ? "✓" : "✗"}`);
+        setText("engine-msg", `下载工具 ${e.ytdlp ? "✓" : "✗"} · ffmpeg ${e.ffmpeg ? "✓" : "✗"} · SenseVoice ${e.sensevoice ? "✓" : "—"} · Whisper ${e.mlx ? "✓" : "—"}`);
         if (ib) { ib.textContent = "重新安装 / 修复"; ib.classList.remove("primary"); ib.disabled = false; }
       } else {
         setText("engine-state", e.broken ? "需要修复" : "未安装");
@@ -38,31 +37,65 @@
         if (ib) { ib.textContent = "一键安装"; ib.classList.add("primary"); ib.disabled = false; }
       }
     }
-    if (!modelBusy) {
-      if (!e.needsModel) {
-        setText("model-state", "无需单独下载");
-        setBar("model-bar", 100);
-        setText("model-msg", "Intel Mac 使用 faster-whisper，首次转写时自动下载小模型。");
-        if (mb) mb.disabled = true;
-      } else if (e.whisperReady) {
-        setText("model-state", "已下载 ✓");
-        setBar("model-bar", 100);
-        if (mb) { mb.textContent = "重新检查"; mb.disabled = false; mb.classList.remove("primary"); }
-      } else {
-        setText("model-state", e.installed ? "未下载" : "先完成 ①");
-        setBar("model-bar", 0);
-        if (mb) { mb.textContent = "下载语音识别模型"; mb.disabled = !e.installed; mb.classList.toggle("primary", !!e.installed); }
-      }
-    }
+    renderModels();
     // 首次引导浮层
     const ov = $m("engine-overlay");
     if (ov && !ov.hidden && ready) ov.hidden = true;
   }
 
+  const fmtSize = (b) => (!b ? "0 MB" : b >= 1073741824 ? (b / 1073741824).toFixed(1) + " GB" : Math.round(b / 1048576) + " MB");
+  const ENGINE_NAMES = { sensevoice: "SenseVoice", whisper: "Whisper" };
+  let modelBusyEngine = null;
+
+  function renderModels() {
+    const e = engine || {};
+    const cur = e.asrEngine || "sensevoice";
+    document.querySelectorAll('input[name="asr-engine"]').forEach((r) => { r.checked = r.value === cur; r.disabled = !!modelBusy; });
+    setText("model-state", e.asrReady ? `${ENGINE_NAMES[cur]} 已就绪 ✓` : (e.installed ? `${ENGINE_NAMES[cur]} 未就绪` : "先完成 ①"));
+    const models = e.models || {};
+    for (const k of ["sensevoice", "whisper"]) {
+      const m = models[k] || {};
+      const row = $m("model-row-" + k);
+      if (row) row.classList.toggle("current", k === cur);
+      const btn = $m("btn-model-" + k);
+      if (modelBusy && modelBusyEngine === k) continue; // 进度由事件更新
+      const intelWhisper = k === "whisper" && e.isArm === false;
+      const exp = m.expectedSize || (e.engines && e.engines[k] && e.engines[k].size) || 0;
+      if (intelWhisper) {
+        setText("model-state-" + k, "首次转写时自动下载");
+        setBar("model-bar-" + k, 0);
+        setText("model-msg-" + k, "Intel Mac 使用 faster-whisper 小模型");
+        if (btn) { btn.hidden = true; }
+        continue;
+      }
+      if (btn) btn.hidden = false;
+      if (m.downloaded) {
+        setText("model-state-" + k, "已下载 ✓ · " + fmtSize(m.size));
+        setBar("model-bar-" + k, 100);
+        setText("model-msg-" + k, m.path || "");
+        if (btn) { btn.textContent = "在访达中显示"; btn.disabled = false; btn.classList.remove("primary"); btn.dataset.act = "reveal"; }
+      } else {
+        setText("model-state-" + k, "未下载 · 约 " + fmtSize(exp));
+        setBar("model-bar-" + k, 0);
+        setText("model-msg-" + k, k === cur ? "当前引擎需要这个模型（自动尝试国内镜像，断点续传）" : "");
+        if (btn) {
+          btn.textContent = "下载";
+          btn.disabled = !e.installed || !!modelBusy;
+          btn.classList.toggle("primary", k === cur && !!e.installed);
+          btn.dataset.act = "download";
+        }
+      }
+    }
+    setText("models-dir", e.modelsDir || "—");
+    setText("models-dir-kind", e.modelsDirCustom ? "自定义文件夹" : "标准 Hugging Face 缓存");
+    const rb = $m("btn-models-reset");
+    if (rb) rb.hidden = !e.modelsDirCustom;
+  }
+
   async function refreshEngine(cached) {
     try { engine = await window.api.engineStatus({ cached: !!cached }); } catch (err) { engine = { installed: false, error: String(err) }; }
     if (engine && engine.installing) installBusy = true;
-    if (engine && engine.modelDownloading) modelBusy = true;
+    if (engine && engine.modelDownloading) { modelBusy = true; modelBusyEngine = engine.modelDownloading; }
     renderEngine();
     return engine;
   }
@@ -80,7 +113,7 @@
     if (r && r.ok) {
       toast("处理组件安装完成");
       await refreshEngine(true);
-      if (engine && engine.installed && !engine.whisperReady && engine.needsModel) doModel();
+      if (engine && engine.installed && !engine.asrReady && engine.needsModel) doModel();
     } else {
       await refreshEngine(true);
       setText("engine-state", "安装失败");
@@ -90,25 +123,37 @@
     syncOverlay();
   }
 
-  async function doModel() {
+  async function doModel(which) {
     if (modelBusy) return;
-    if (engine && engine.whisperReady) { await refreshEngine(false); return; }
+    const k = typeof which === "string" ? which : ((engine && engine.asrEngine) || "sensevoice");
+    if (engine && engine.models && engine.models[k] && engine.models[k].downloaded && engine.asrReady) { await refreshEngine(false); return; }
     modelBusy = true;
-    const mb = $m("btn-model-download");
-    if (mb) mb.disabled = true;
-    setText("model-state", "下载中…");
+    modelBusyEngine = k;
+    renderModels();
+    setText("model-state-" + k, "下载中…");
     syncOverlay();
-    const r = await window.api.engineDownloadModel();
+    const r = await window.api.engineDownloadModel(k);
     modelBusy = false;
+    modelBusyEngine = null;
     if (r && r.ok) {
-      toast("语音识别模型已就绪");
-      await refreshEngine(true);
+      toast(`${ENGINE_NAMES[k]} 模型已就绪`);
+      await refreshEngine(false);
     } else {
-      renderEngine();
-      setText("model-state", "下载失败");
-      setText("model-msg", "下载失败：" + ((r && r.error) || "未知错误") + "（可稍后重试，已下载部分会续传）");
+      await refreshEngine(true);
+      setText("model-state-" + k, "下载失败");
+      setText("model-msg-" + k, "下载失败：" + ((r && r.error) || "未知错误") + "（可稍后重试，已下载部分会续传）");
       toast("模型下载失败", true);
     }
+    syncOverlay();
+  }
+
+  async function setAsr(k) {
+    if (modelBusy) return;
+    const r = await window.api.engineSetAsr(k);
+    if (r && r.ok) { engine = r; renderEngine(); toast(`已切换到 ${ENGINE_NAMES[k]}`); }
+    if (engine && engine.installed && !engine.asrReady) {
+      setText("model-msg", `切换后需要下载 ${ENGINE_NAMES[k]} 模型${engine[k === "sensevoice" ? "sensevoice" : "mlx"] ? "" : "（会先自动安装对应组件）"}，点对应的「下载」。`);
+    } else setText("model-msg", "");
     syncOverlay();
   }
 
@@ -120,10 +165,12 @@
       setText("engine-state", p.pct >= 100 ? "已安装 ✓" : `安装中 ${p.pct}%`);
       if (p.msg) setText("engine-msg", p.msg);
     } else if (p.kind === "model") {
+      const k = p.engine || modelBusyEngine || "sensevoice";
       modelBusy = p.pct < 100;
-      setBar("model-bar", p.pct);
-      setText("model-state", p.pct >= 100 ? "已下载 ✓" : `下载中 ${p.pct}%`);
-      if (p.msg) setText("model-msg", p.msg);
+      modelBusyEngine = modelBusy ? k : null;
+      setBar("model-bar-" + k, p.pct);
+      setText("model-state-" + k, p.pct >= 100 ? "已下载 ✓" : `下载中 ${p.pct}%`);
+      if (p.msg) { setText("model-msg-" + k, p.msg); setText("model-msg", p.msg); }
     }
     syncOverlay(p);
   });
@@ -137,7 +184,7 @@
     ov.innerHTML = `
       <div class="date-ask-card">
         <div class="date-ask-title">🧩 安装处理组件</div>
-        <p class="date-ask-text">处理抖音收藏需要先安装<b>下载工具、Python 运行环境和本地语音识别（Whisper）</b>。点下面的按钮会自动完成，<b>不用打开终端，也不用装 Homebrew</b>。安装约 3~10 分钟，之后还要下载一次语音识别模型（约 1.6 GB）。</p>
+        <p class="date-ask-text">处理抖音收藏需要先安装<b>下载工具、Python 运行环境和本地语音识别（默认 SenseVoice，中文更快更准）</b>。点下面的按钮会自动完成，<b>不用打开终端，也不用装 Homebrew</b>。安装约 3~10 分钟，之后还要下载一次语音识别模型（SenseVoice 约 230 MB；可在设置里改用 Whisper）。</p>
         <div class="engine-ov-step"><span id="ov-step-label">① 处理组件</span><div class="bar-track"><div class="bar-fill" id="ov-bar"></div></div><div class="engine-msg" id="ov-msg"></div></div>
         <div class="date-ask-actions">
           <button class="btn primary" id="ov-go">一键安装</button>
@@ -146,7 +193,7 @@
       </div>`;
     document.body.appendChild(ov);
     $m("ov-go").addEventListener("click", () => {
-      if (engine && engine.installed && engine.needsModel && !engine.whisperReady) doModel();
+      if (engine && engine.installed && engine.needsModel && !engine.asrReady) doModel();
       else doInstall();
     });
     $m("ov-later").addEventListener("click", () => { ov.hidden = true; });
@@ -165,10 +212,12 @@
       setText("ov-step-label", "② 下载语音识别模型");
       if (p && p.kind === "model") { setBar("ov-bar", p.pct); setText("ov-msg", p.msg || ""); }
       if (go) { go.disabled = true; go.textContent = "下载中…"; }
-    } else if (e.installed && e.needsModel && !e.whisperReady) {
+    } else if (e.installed && e.needsModel && !e.asrReady) {
       setText("ov-step-label", "② 下载语音识别模型");
       setBar("ov-bar", 0);
-      setText("ov-msg", $m("model-msg") ? $m("model-msg").textContent : "");
+      const cur = e.asrEngine || "sensevoice";
+      const exp = e.models && e.models[cur] ? e.models[cur].expectedSize : 0;
+      setText("ov-msg", `${ENGINE_NAMES[cur]} 模型约 ${fmtSize(exp)}，下载到标准 Hugging Face 缓存，只需一次。`);
       if (go) { go.disabled = false; go.textContent = "下载语音识别模型"; }
     } else if (!e.installed) {
       setText("ov-step-label", "① 安装处理组件");
@@ -182,7 +231,7 @@
   async function bootEngine() {
     buildOverlay();
     const e = await refreshEngine(false);
-    if (!(e.installed && e.whisperReady) && !overlayShownOnce) {
+    if (!(e.installed && e.asrReady) && !overlayShownOnce) {
       const ov = $m("engine-overlay");
       // 欢迎弹窗还开着时，等它关掉再提示
       const fr = $m("first-run-overlay");
@@ -195,7 +244,23 @@
   }
 
   $m("btn-engine-install") && $m("btn-engine-install").addEventListener("click", doInstall);
-  $m("btn-model-download") && $m("btn-model-download").addEventListener("click", doModel);
+  for (const k of ["sensevoice", "whisper"]) {
+    const b = $m("btn-model-" + k);
+    if (b) b.addEventListener("click", () => { if (b.dataset.act === "reveal") window.api.engineRevealModels(k); else doModel(k); });
+  }
+  document.querySelectorAll('input[name="asr-engine"]').forEach((r) => r.addEventListener("change", () => { if (r.checked) setAsr(r.value); }));
+  $m("btn-models-reveal") && $m("btn-models-reveal").addEventListener("click", async () => {
+    const r = await window.api.engineRevealModels();
+    if (r && !r.ok) toast("打不开文件夹：" + (r.error || ""), true);
+  });
+  $m("btn-models-choose") && $m("btn-models-choose").addEventListener("click", async () => {
+    const r = await window.api.engineChooseModelsDir();
+    if (r && r.ok) { engine = r; renderEngine(); toast("模型文件夹已更改"); }
+  });
+  $m("btn-models-reset") && $m("btn-models-reset").addEventListener("click", async () => {
+    const r = await window.api.engineResetModelsDir();
+    if (r && r.ok) { engine = r; renderEngine(); toast("已恢复为标准 Hugging Face 缓存"); }
+  });
 
   // ---------- 知识库文件夹选择 ----------
   const pick = $m("btn-pick-vault");

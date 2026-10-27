@@ -6,7 +6,8 @@
 #
 # Usage: install-worker.sh [worker_dir] [extra]
 #   worker_dir  path to the worker package (default: ../worker next to this script)
-#   extra       "" (base) | "mlx" (adds Whisper on Apple Silicon) | "cpu"
+#   extra       "" (base) | "sensevoice" (SenseVoice via sherpa-onnx, CPU) | "mlx" (Whisper on Apple Silicon)
+#               | "cpu" (faster-whisper) | a comma list such as "mlx,sensevoice"
 # Output: lines "PROGRESS <0-100> <message>" for the app, then "DONE" or "FAILED <message>".
 set -uo pipefail
 
@@ -36,7 +37,12 @@ echo "PROGRESS 30 准备 Python 3.12"
 
 TARGET="$WORKER_DIR"
 [[ -n "$EXTRA" ]] && TARGET="$WORKER_DIR[$EXTRA]"
-if [[ "$EXTRA" == "mlx" ]]; then echo "PROGRESS 55 安装 Whisper 组件"; else echo "PROGRESS 55 安装下载与转录组件"; fi
+case "$EXTRA" in
+  *sensevoice*mlx*|*mlx*sensevoice*) echo "PROGRESS 55 安装 SenseVoice 与 Whisper 组件" ;;
+  *sensevoice*) echo "PROGRESS 55 安装 SenseVoice 语音识别组件" ;;
+  *mlx*) echo "PROGRESS 55 安装 Whisper 组件" ;;
+  *) echo "PROGRESS 55 安装下载与转录组件" ;;
+esac
 if [[ -w "$WORKER_DIR" && -d "$WORKER_DIR/../.git" ]]; then
   VIRTUAL_ENV="$VENV" "$UV" pip install -q -e "$TARGET" 2>&1 | tail -5 || true
 else

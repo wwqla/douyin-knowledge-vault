@@ -46,7 +46,7 @@ class Settings:
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-chat"
     llm_api_key: str | None = None
-    asr_engine: str = "auto"  # auto | apple | mlx | faster-whisper
+    asr_engine: str = "auto"  # auto | apple | sensevoice | mlx | faster-whisper
     asr_model: str = ""  # empty = engine default
     cookies_from_browser: str | None = None  # e.g. "safari", "chrome"
     cookies_file: Path | None = None
