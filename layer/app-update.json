@@ -1,0 +1,12 @@
+{
+  "version": "0.2.9",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "ac8e861a5aa278eb5ed28b65af91bf37e12163e51d984083c436f107ffe9756a",
+  "size": 9924608,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.9/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.9",
+  "notes": "AI 接口地址填智谱、通义、Kimi、硅基流动、OpenAI 时，模型自动换成该平台的默认型号，避免「模型不存在」",
+  "publishedAt": "2026-10-27T17:32:39.029Z"
+}
