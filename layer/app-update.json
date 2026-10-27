@@ -1,0 +1,12 @@
+{
+  "version": "0.2.5",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "38a85aa908a3d3746dafc713fa2175ce1eda08cbca11239775c38bebfec388ef",
+  "size": 9898188,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.5/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.5",
+  "notes": "修复打开软件后窗口空白、要放大才显示内容的问题；启动首帧直接按性能模式渲染，打开更快更流畅",
+  "publishedAt": "2026-10-27T16:54:03.825Z"
+}
