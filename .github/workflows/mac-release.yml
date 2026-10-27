@@ -38,6 +38,16 @@ jobs:
           npm test
       - name: Build DMG (unsigned, ad-hoc)
         run: npm run dist
+      - name: Verify app bundle
+        run: |
+          APP="release/mac-arm64/抖音知识库.app"
+          test -f "$APP/Contents/Resources/engine/install-worker.sh"
+          test -f "$APP/Contents/Resources/engine/worker/pyproject.toml"
+          test -f "$APP/Contents/Resources/engine/worker/src/favvault_worker/cli.py"
+          test ! -e "$APP/Contents/Resources/engine/worker/tests"
+          npx --yes @electron/asar list "$APP/Contents/Resources/app.asar" | grep -E "^/(main.js|preload.js|lib/douyin.js|renderer/mac.js|assets/card-icons/knowledge-book.png)$"
+          codesign --verify --deep --strict "$APP" && echo "signature ok"
+          ls -la release/*.dmg
       - name: Publish GitHub Release (prerelease)
         env:
           GH_TOKEN: ${{ github.token }}
