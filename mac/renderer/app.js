@@ -3208,10 +3208,10 @@ $("btn-weekly-view").addEventListener("click", () => {
   const saved = (() => { try { return localStorage.getItem("dok-page"); } catch { return null; } })();
   switchPage(PAGES.includes(saved) ? saved : "dashboard");
   // 每周知识周报：基础版所有用户可用（饼图+统计），会员解锁完整版（词云/本周洞察/本周小结/成就徽章）；设置面板渲染徽章进度；启动时检测新达成成就并在页面弹出解锁动画；满足条件（已启用+今天是对应星期+今天未弹过）时自动展示周报
-  renderWeeklyPanel();
-  checkNewBadges();
-  maybeShowWeeklyReport();
   maybeShowFirstRunWelcome();
+  // 周报/成就要统计整个知识库，等首屏画完、空闲时再做
+  const later = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 1500));
+  later(() => { renderWeeklyPanel(); checkNewBadges(); maybeShowWeeklyReport(); });
 })();
 
 // 首次打开欢迎引导：没看过就弹一次，提醒先去设置处理范围 + 填 API Key，点哪个按钮都标记已看过，不再打扰

@@ -1404,7 +1404,16 @@ function recordApiUsage(respJson) {
   } catch { /* 统计失败不影响主流程 */ }
 }
 
-ipcMain.handle("weekly:stats", async () => {
+// 周报统计要遍历整个知识库：启动时多处同时请求，合并成一次并缓存 2 分钟（知识库变化时作废）
+let weeklyCache = null; // { at, promise }
+ipcMain.handle("weekly:stats", () => {
+  if (weeklyCache && Date.now() - weeklyCache.at < 120000) return weeklyCache.promise;
+  const promise = computeWeeklyStats();
+  weeklyCache = { at: Date.now(), promise };
+  promise.then((r) => { if (!r || !r.ok) weeklyCache = null; }, () => { weeklyCache = null; });
+  return promise;
+});
+async function computeWeeklyStats() {
   try {
     const s = loadSettings();
     const root = vault.knowledgeRoot(s.vaultPath);
@@ -1460,7 +1469,7 @@ ipcMain.handle("weekly:stats", async () => {
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
   }
-});
+}
 
 ipcMain.handle("weekly:ack", (_e, { dateKey, hasNew }) => {
   const s = loadSettings();
@@ -1819,7 +1828,8 @@ function watchVault(vaultPath) {
   const root = vault.knowledgeRoot(vaultPath);
   if (!vaultPath || !fs.existsSync(root)) return;
   const notify = () => {
-    vidx.invalidate(); // 立即作废缓存（便宜）；通知界面去抖 800 ms
+    vidx.invalidate(); // 立即作废缓存（便宜）
+    weeklyCache = null; // 通知界面去抖 800 ms
     if (vaultWatchDebounce) clearTimeout(vaultWatchDebounce);
     vaultWatchDebounce = setTimeout(() => { vaultWatchDebounce = null; vaultChanged(); }, 800);
   };
@@ -1928,7 +1938,7 @@ if (gotLock) {
     if (LOGIN_PROBE_FILE) { await runLoginProbe(); return; }
     createWindow();
     if (PRINT_LAYER_FILE) { runPrintLayer(); return; }
-    watchVault(s.vaultPath);
+    setTimeout(() => watchVault(s.vaultPath), 4000); // 递归监听知识库放到首屏之后，免得拖慢启动
     if (CONTRAST_FILE) runContrastCheck();
     else if (process.argv.includes("--smoke-test")) runSmokeTest();
     else if (!process.argv.includes("--no-update-check")) setTimeout(() => { checkAndMaybeDownload({ auto: true }).catch(() => {}); }, 6000);
