@@ -70,3 +70,20 @@ jobs:
           name: mac-dmg
           path: mac/release/*.dmg
           retention-days: 7
+
+  engine-install:
+    # 模拟应用内「一键安装」：在干净的 macOS 上跑内置的 install-worker.sh（mlx 版），再自检
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install engine like the app does
+        run: |
+          export FAVVAULT_HOME="$RUNNER_TEMP/DouyinKnowledgeVault/engine"
+          mkdir -p "$FAVVAULT_HOME/src"
+          cp -R mac/engine/worker "$FAVVAULT_HOME/src/worker"
+          rm -rf "$FAVVAULT_HOME/src/worker/tests"
+          env -i HOME="$HOME" FAVVAULT_HOME="$FAVVAULT_HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+            /bin/bash mac/engine/install-worker.sh "$FAVVAULT_HOME/src/worker" mlx | tee install.log
+          grep -q '^DONE$' install.log
+          "$FAVVAULT_HOME/venv/bin/python" -m favvault_worker doctor
+          "$FAVVAULT_HOME/venv/bin/python" -m favvault_worker process --help | grep -- --cookies
