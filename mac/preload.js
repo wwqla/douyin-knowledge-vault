@@ -1,5 +1,15 @@
 const { contextBridge, ipcRenderer, clipboard } = require("electron");
 
+// 首帧前就加上 body.perf（主进程通过 --dkv-perf 传入），避免首帧用大图 + 毛玻璃渲染导致窗口空白/卡顿
+const DKV_PERF = !process.argv.includes("--dkv-perf=0");
+(function applyPerfEarly() {
+  const set = () => { if (document.body) { document.body.classList.toggle("perf", DKV_PERF); return true; } return false; };
+  if (set()) return;
+  const mo = new MutationObserver(() => { if (set()) mo.disconnect(); });
+  mo.observe(document, { childList: true, subtree: true });
+  window.addEventListener("DOMContentLoaded", () => { set(); mo.disconnect(); }, { once: true });
+})();
+
 // ---- 轻量 Markdown 渲染（覆盖 Obsidian 笔记常用语法，无第三方依赖） ----
 function renderMarkdown(md) {
   const esc = (s) =>

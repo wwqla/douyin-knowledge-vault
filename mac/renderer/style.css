@@ -31,7 +31,7 @@ body {
   font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   font-size: var(--fs, 14px);
   color: var(--text);
-  background: url("../assets/bg.jpg") center / cover no-repeat fixed;
+  background: #0f172a url("../assets/bg.jpg") center / cover no-repeat fixed;
   overflow: hidden;
 }
 /* 风景背景上的深色遮罩，保证 UI 可读性 */
@@ -2267,6 +2267,8 @@ body.perf {
   --glow-soft: none;
   background-attachment: scroll !important;
 }
+/* 首帧（applySkin 之前）在性能模式下也用缩小版背景图 */
+body.perf:not([style*="background"]) { background-image: url("../assets/skins/lite/bg.jpg"); }
 body.perf.skin-light {
   --perf-surface: rgba(255, 255, 255, 0.88);
   --perf-surface-2: rgba(248, 250, 252, 0.95);

@@ -158,6 +158,9 @@ function createWindow() {
   const area = screen.getPrimaryDisplay().workArea;
   const w = Math.min(1280, area.width - 40);
   const h = Math.min(820, area.height - 60);
+  // 首帧就按性能模式渲染（之前要等设置读完才加 body.perf，首帧是大图 fixed 背景 + 几十处毛玻璃，Mac 上首帧合成卡住 → 窗口空白）
+  let perfFirst = true;
+  try { perfFirst = loadSettings().perfMode !== false; } catch { /* 用默认 */ }
   mainWindow = new BrowserWindow({
     width: w,
     height: h,
@@ -171,9 +174,33 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      additionalArguments: ["--dkv-perf=" + (perfFirst ? "1" : "0")],
     },
   });
-  mainWindow.once("ready-to-show", () => { mainWindow.center(); mainWindow.show(); mainWindow.focus(); });
+  const win = mainWindow;
+  // 兜底：ready-to-show 没来也在 3 秒后显示；显示后强制重绘一次，并像手动拉一下窗口那样轻推 1px，
+  // 解决 Mac 上隐藏创建的窗口显示后不出画面、要放大/缩放才显示内容的问题
+  let revealed = false;
+  const repaint = () => {
+    if (win.isDestroyed()) return;
+    try { win.webContents.invalidate(); } catch { /* ignore */ }
+  };
+  const reveal = () => {
+    if (revealed || win.isDestroyed()) return;
+    revealed = true;
+    win.center(); win.show(); win.focus();
+    setTimeout(repaint, 120);
+    setTimeout(() => {
+      if (win.isDestroyed() || win.isMaximized() || win.isFullScreen()) return;
+      const [cw, ch] = win.getSize();
+      win.setSize(cw + 1, ch);
+      setTimeout(() => { if (!win.isDestroyed()) { win.setSize(cw, ch); repaint(); } }, 60);
+    }, 400);
+  };
+  win.once("ready-to-show", reveal);
+  setTimeout(reveal, 3000);
+  win.on("show", () => setTimeout(repaint, 50));
+  win.on("restore", () => setTimeout(repaint, 50));
   mainWindow.webContents.once("did-finish-load", () => BOOT.markReady());
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   // 笔记里的外部链接用系统浏览器打开
