@@ -5,8 +5,9 @@
 # 检查：① 无更新 → 内置层 ② 放入新层 → 加载新层 ③ 新层被篡改 → 退回内置并标记坏版本
 #       ④ 新层 main.js 抛错 → 自动重启回内置 ⑤ 新层连续崩溃 2 次 → 第 3 次退回内置
 set -euo pipefail
-APP="$1"; NEW_ASAR="${2:-}"; NEW_VER="${3:-}"
-BIN="$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info.plist" CFBundleExecutable)"
+APP="$(cd "$1" && pwd)"; NEW_ASAR="${2:-}"; NEW_VER="${3:-}"
+[ -z "$NEW_ASAR" ] || NEW_ASAR="$(cd "$(dirname "$NEW_ASAR")" && pwd)/$(basename "$NEW_ASAR")"
+BIN="$APP/Contents/MacOS/$(plutil -extract CFBundleExecutable raw "$APP/Contents/Info.plist")"
 BUNDLED_ASAR="$APP/Contents/Resources/app.asar"
 WORK="$(mktemp -d)"
 export DKV_UPDATES_DIR="$WORK/updates"

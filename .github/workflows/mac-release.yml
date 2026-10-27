@@ -139,7 +139,7 @@ jobs:
           hdiutil attach -nobrowse -mountpoint /tmp/dkvdmg dl/*.dmg
           mkdir -p "$RUNNER_TEMP/apps" && cp -R /tmp/dkvdmg/*.app "$RUNNER_TEMP/apps/"
           hdiutil detach /tmp/dkvdmg
-          APP="$(ls -d "$RUNNER_TEMP"/apps/*.app)"; BIN="$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info.plist" CFBundleExecutable)"
+          APP="$(ls -d "$RUNNER_TEMP"/apps/*.app)"; BIN="$APP/Contents/MacOS/$(plutil -extract CFBundleExecutable raw "$APP/Contents/Info.plist")"
           export DKV_UPDATES_DIR="$RUNNER_TEMP/updates"
           wait_file() { for i in $(seq 1 120); do [ -s "$1" ] && return 0; sleep 1; done; return 1; }
           "$BIN" --print-layer="$RUNNER_TEMP/before.json" & wait_file "$RUNNER_TEMP/before.json"; sleep 1; cat "$RUNNER_TEMP/before.json"
