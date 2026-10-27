@@ -1,0 +1,12 @@
+{
+  "version": "0.2.4",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "5308b3ebbff1f89530abb8b57ed31ff1ece58f1122cfc590b7e2b144664be1cb",
+  "size": 9896114,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.4/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.4",
+  "notes": "国内网络安装处理组件自动走国内镜像（uv、Python、依赖包），不再卡在 10%",
+  "publishedAt": "2026-10-27T16:04:30.713Z"
+}
