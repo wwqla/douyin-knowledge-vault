@@ -20,6 +20,10 @@
 4. 第二步：填入你自己的 LLM API Key（DeepSeek 等 OpenAI 兼容接口）
 5. 第三步：点「开始处理收藏」，扫码登录抖音，就会自动开始整理你的收藏了
 
+## 🍎 macOS 版（预览）
+
+Apple 芯片 Mac 可用：到 [Releases](https://github.com/wwqla/douyin-knowledge-vault/releases) 下载 `DouyinKnowledgeVault-*-mac-arm64.dmg`，拖进「应用程序」，首次打开到「系统设置 › 隐私与安全性」点「仍要打开」。处理组件和语音识别模型在应用里一键安装，扫码登录抖音、填写 API Key 即可使用（知识蒸馏 Mac 版暂未提供）。源码在 [`mac/`](mac/)，详细说明见 [mac/README.md](mac/README.md)。
+
 ## 📝 从源码运行
 
 ```bash
@@ -41,7 +45,7 @@ npm run dist
 - 所有 AI 处理都在你自己的电脑或你自己的 API Key 下运行，软件作者看不到你的内容
 - 知识库是纯 Markdown 文件，你可以用任何编辑器打开，不被软件锁死
 - Whisper 模型首次运行会自动从国内镜像下载，约几百 MB
-- 目前仅支持 Windows 系统，Mac/Linux 版本后续会考虑
+- Windows 版见上文；macOS 版（Apple 芯片）见 [mac/README.md](mac/README.md)；Linux 版本后续会考虑
 
 ## 🤝 贡献
 

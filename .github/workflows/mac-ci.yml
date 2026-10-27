@@ -1,0 +1,59 @@
+name: Mac CI
+on:
+  push:
+    branches: [main]
+    paths: ["mac/**", ".github/workflows/mac-*.yml"]
+  pull_request:
+    paths: ["mac/**", ".github/workflows/mac-*.yml"]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mac
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: npm run check
+      - name: Unit tests (collection mapping, cookie export, launchd, state, vault)
+        run: npm test
+
+  worker:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Test bundled FavVault worker
+        working-directory: mac/engine/worker
+        run: |
+          uv venv --python 3.12
+          uv pip install -e '.[dev]'
+          uv run pytest -q
+
+  build:
+    runs-on: macos-14
+    needs: check
+    defaults:
+      run:
+        working-directory: mac
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npm ci || npm install
+      - name: Build DMG (unsigned, ad-hoc)
+        run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: mac/release/*.dmg
+          retention-days: 7

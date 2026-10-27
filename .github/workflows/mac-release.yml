@@ -1,0 +1,58 @@
+name: Mac Release
+on:
+  push:
+    tags: ["mac-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（不带 mac-v 前缀，例如 0.1.0）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: mac
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve version
+        id: v
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#mac-v}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          npm pkg set version="$V"
+      - name: Install
+        run: npm ci || npm install
+      - name: Check & test
+        run: |
+          npm run check
+          npm test
+      - name: Build DMG (unsigned, ad-hoc)
+        run: npm run dist
+      - name: Publish GitHub Release (prerelease)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="mac-v${{ steps.v.outputs.version }}"
+          NOTES=release-notes.md
+          {
+            echo "## 抖音知识库 macOS 版 ${{ steps.v.outputs.version }}（预览版）"
+            echo
+            echo "- 适用：Apple 芯片（M1/M2/M3/M4）Mac，macOS 12 及以上"
+            echo "- 下载下方 .dmg，打开后把「抖音知识库」拖进「应用程序」"
+            echo "- 应用未经 Apple 公证：第一次打开会被拦截，到「系统设置 › 隐私与安全性」底部点「仍要打开」"
+            echo "- 首次启动按提示一键安装处理组件、下载语音识别模型（不需要终端）"
+            echo
+            echo "使用说明见 [mac/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/mac/README.md)"
+          } > "$NOTES"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 $TAG" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
+          gh release upload "$TAG" release/*.dmg --clobber
