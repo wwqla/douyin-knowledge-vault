@@ -1,0 +1,12 @@
+{
+  "version": "0.2.6",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "b23633aca49f40ad66ea406e7dc5aafb9a24786991f919f870221bf10c1165cd",
+  "size": 9907404,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.6/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.6",
+  "notes": "修复抖音视频下载失败（Fresh cookies are needed）：改用软件内已登录的抖音直接取声音，优先只下音频、否则下最低码率，转写完自动删除；流水线页新增「清空日志」",
+  "publishedAt": "2026-10-27T17:12:30.306Z"
+}
