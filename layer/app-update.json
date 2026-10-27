@@ -1,0 +1,12 @@
+{
+  "version": "0.2.11",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "8146e5079dd343ae2d01c41e01b47822ef289a6cf1c89ca0fe26f9518fd5bb8a",
+  "size": 9941288,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.11/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.11",
+  "notes": "修复部分 Mac 打开后窗口一直黑屏：显卡着色器出错时改用软件渲染",
+  "publishedAt": "2026-10-27T17:44:36.057Z"
+}
