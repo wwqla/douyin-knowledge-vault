@@ -39,20 +39,6 @@
       "!**/.DS_Store",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "engine",
-        "to": "engine",
-        "filter": [
-          "**/*",
-          "!**/__pycache__",
-          "!**/*.pyc",
-          "!**/.pytest_cache",
-          "!**/.venv",
-          "!worker/tests"
-        ]
-      }
-    ],
     "mac": {
       "target": [
         {

@@ -45,10 +45,8 @@ const CARDS_DIR = path.join(DATA_DIR, "knowledge-cards");
 const COOKIES_FILE = path.join(DATA_DIR, "douyin-cookies.txt");
 const ENGINE_HOME = path.join(DATA_DIR, "engine"); // FAVVAULT_HOME：venv / python / worker 状态库 / 临时媒体
 const VENV_PY = path.join(ENGINE_HOME, "venv", "bin", "python");
-// 处理组件源码：增量应用层自带 engine/ 时用它（随增量更新），否则用安装包 Resources/engine
-const ENGINE_SRC = (BOOT.source === "update" && fs.existsSync(path.join(__dirname, "engine", "install-worker.sh")))
-  ? path.join(__dirname, "engine")
-  : (app.isPackaged ? path.join(process.resourcesPath, "engine") : path.join(__dirname, "engine"));
+// 处理组件源码随应用层一起放在 app.asar/engine（增量更新也会带上新版本）；安装时拷贝出来再运行
+const ENGINE_SRC = path.join(__dirname, "engine");
 const FONTS_DIR = path.join(DATA_DIR, "fonts");
 const DOUYIN_PARTITION = "persist:douyin";
 const IS_ARM = process.arch === "arm64";
