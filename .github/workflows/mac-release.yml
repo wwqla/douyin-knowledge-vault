@@ -83,7 +83,7 @@ jobs:
           UPD_MB=$(node -e 'console.log((require("fs").statSync("release/app-update.asar").size/1048576).toFixed(1))')
           NOTES=release-notes.md
           {
-            echo "## 抖音知识库 macOS 版 $V（预览版）"
+            echo "## 抖音知识库 macOS 版 ${V}（预览版）"
             echo
             echo "- 适用：Apple 芯片（M1/M2/M3/M4）Mac，macOS 12 及以上"
             echo "- **已装 0.2.0 及以上版本**：不用下载安装包，打开应用会自动下载增量更新（约 ${UPD_MB} MB），在「设置 › 关于与更新」点「重启生效」即可"
@@ -94,7 +94,7 @@ jobs:
             echo
             echo "使用说明见 [mac/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/mac/README.md)"
           } > "$NOTES"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 $V（预览）" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 ${V}（预览）" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
           gh release upload "$TAG" release/*.dmg release/app-update.asar release/app-update.json --clobber
       - name: Update the mac-latest channel (mirror-friendly manifest)
         env:
