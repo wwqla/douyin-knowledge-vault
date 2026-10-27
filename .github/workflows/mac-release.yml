@@ -64,5 +64,5 @@ jobs:
             echo
             echo "使用说明见 [mac/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/mac/README.md)"
           } > "$NOTES"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 $TAG" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "抖音知识库 Mac 版 ${{ steps.v.outputs.version }}（预览）" --notes-file "$NOTES" --prerelease --target "$GITHUB_SHA"
           gh release upload "$TAG" release/*.dmg --clobber
