@@ -60,7 +60,8 @@ jobs:
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG"
           cp "release/mac-arm64/抖音知识库.app/Contents/Resources/app.asar" release/app-update.asar
           DMG="$(cd release && ls *.dmg | head -1)"
-          NOTES="$(git log -1 --pretty=%s)"
+          # 更新说明给用户看：优先用 mac/update-notes.txt 的第一行，没有再用提交标题
+          NOTES="$(head -n1 update-notes.txt 2>/dev/null || true)"; [ -n "$NOTES" ] || NOTES="$(git log -1 --pretty=%s)"
           node -e '
             const fs=require("fs"),c=require("crypto");
             const [v,base,dmg,notes,repo,tag]=process.argv.slice(1);
