@@ -24,10 +24,34 @@ fail() { echo "FAILED $*"; exit 1; }
 mkdir -p "$BIN_DIR" || fail "无法创建 $HOME_DIR"
 
 echo "PROGRESS 5 准备安装工具"
+# 国内网络访问 GitHub/PyPI 很慢：先测一下，慢就全部走国内镜像
+CN=0
+if ! curl -fsS -o /dev/null -m 6 https://github.com 2>/dev/null; then CN=1; fi
+if [[ "$CN" == 1 ]]; then
+  export UV_PYTHON_INSTALL_MIRROR="https://registry.npmmirror.com/-/binary/python-build-standalone"
+  export UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+  export UV_INDEX_URL="$UV_DEFAULT_INDEX"
+  export UV_HTTP_TIMEOUT=120
+fi
+install_uv_from_mirror() {
+  local idx="https://pypi.tuna.tsinghua.edu.cn/simple/uv/" whl tmp
+  whl="$(curl -fsSL -m 30 "$idx" | grep -oE 'href="[^"]*uv-[0-9.]+-py3-none-macosx_[0-9_]+_arm64\.whl[^"]*"' | tail -1 | sed -E 's/^href="//; s/"$//; s/#.*$//')" || return 1
+  [[ -n "$whl" ]] || return 1
+  if [[ "$whl" != http* ]]; then whl="${whl#/}"; while [[ "$whl" == ../* ]]; do whl="${whl#../}"; done; whl="https://pypi.tuna.tsinghua.edu.cn/$whl"; fi
+  tmp="$(mktemp -d)" || return 1
+  curl -fsSL -m 300 -o "$tmp/uv.whl" "$whl" || return 1
+  (cd "$tmp" && unzip -q -o uv.whl 'uv-*.data/scripts/uv') || return 1
+  cp "$tmp"/uv-*.data/scripts/uv "$BIN_DIR/uv" && chmod +x "$BIN_DIR/uv"
+}
 if ! command -v uv >/dev/null 2>&1; then
   echo "PROGRESS 10 下载 uv"
-  curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$BIN_DIR" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 \
-    || fail "下载 uv 失败，请检查网络"
+  if [[ "$CN" == 1 ]]; then
+    install_uv_from_mirror || curl -LsSf -m 300 https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$BIN_DIR" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 \
+      || fail "下载 uv 失败，请检查网络"
+  else
+    curl -LsSf -m 300 https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$BIN_DIR" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 \
+      || install_uv_from_mirror || fail "下载 uv 失败，请检查网络"
+  fi
 fi
 UV="$(command -v uv)" || fail "找不到 uv"
 
