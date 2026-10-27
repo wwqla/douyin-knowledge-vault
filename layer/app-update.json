@@ -1,0 +1,12 @@
+{
+  "version": "0.2.12",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "11a91e1ea556d64c9fbb0a5032f7c729d2b27f72562f15232bf30cc6eaf872a2",
+  "size": 9942084,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.12/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.12",
+  "notes": "智谱「模型不存在」：默认改用当前免费的 glm-4.7-flash，旧编码自动替换并在出错时自动重试；含 0.2.11 黑屏修复",
+  "publishedAt": "2026-10-27T17:53:08.748Z"
+}
