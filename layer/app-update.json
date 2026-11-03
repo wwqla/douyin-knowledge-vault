@@ -1,0 +1,12 @@
+{
+  "version": "0.2.17",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "652476cdbedd393a048420cda2aa1f4bebf6b7c095ba88cafa278b2c099991bb",
+  "size": 9968004,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.17/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.17",
+  "notes": "YouTube 等网站要求登录/人机验证时，自动借用本机 Chrome、Edge 等浏览器里的登录状态重试（Chrome 首次会弹出钥匙串授权）",
+  "publishedAt": "2026-11-03T09:06:04.906Z"
+}
