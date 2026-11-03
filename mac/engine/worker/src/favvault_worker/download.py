@@ -190,8 +190,51 @@ def _info_to_media(info: dict, url: str, path: Path | None) -> MediaInfo:
     )
 
 
+NEEDS_LOGIN = re.compile(r"Sign in to confirm|not a bot|confirm your age|login required|only works when logged-in|"
+                         r"members-only|HTTP Error 412|use --cookies", re.I)
+
+# macOS 上常见浏览器的资料目录：存在才去读它的 Cookie（Chrome 系首次会弹钥匙串授权）
+BROWSER_DIRS = [
+    ("chrome", "~/Library/Application Support/Google/Chrome"),
+    ("edge", "~/Library/Application Support/Microsoft Edge"),
+    ("brave", "~/Library/Application Support/BraveSoftware/Brave-Browser"),
+    ("firefox", "~/Library/Application Support/Firefox/Profiles"),
+    ("chromium", "~/Library/Application Support/Chromium"),
+    ("vivaldi", "~/Library/Application Support/Vivaldi"),
+    ("safari", "~/Library/Containers/com.apple.Safari/Data/Library/Cookies"),
+]
+
+
+def installed_browsers() -> list[str]:
+    forced = os.environ.get("FAVVAULT_COOKIE_BROWSERS")
+    if forced is not None:
+        return [b for b in forced.split(",") if b]
+    return [name for name, d in BROWSER_DIRS if Path(d).expanduser().exists()]
+
+
 def fetch(url: str, out_dir: Path, cookies_from_browser: str | None = None,
           cookies_file: Path | None = None) -> MediaInfo:
+    """抖音/小红书用应用导出的 Cookie；其他网站先匿名试，遇到「需要登录/人机验证」再借用本机浏览器的登录状态。"""
+    try:
+        return _fetch_once(url, out_dir, cookies_from_browser, cookies_file)
+    except DownloadError as e:
+        if cookies_from_browser or detect_platform(url) in ("douyin", "xhs") or not NEEDS_LOGIN.search(str(e)):
+            raise
+        first = e
+    tried = []
+    for browser in installed_browsers():
+        emit("cookie_browser", browser=browser)
+        try:
+            return _fetch_once(url, out_dir, browser, None)
+        except DownloadError as e2:
+            tried.append(browser)
+            log(f"cookies from {browser} did not help: {str(e2)[:200]}", level="info")
+    hint = (f"已尝试借用浏览器登录状态（{', '.join(tried)}）仍不行" if tried else "本机没找到可借用登录状态的浏览器")
+    raise DownloadError(f"{first} ｜ 需要登录：{hint}。请在 Chrome 或 Edge 里登录该网站后重试")
+
+
+def _fetch_once(url: str, out_dir: Path, cookies_from_browser: str | None = None,
+                cookies_file: Path | None = None) -> MediaInfo:
     try:
         import yt_dlp  # type: ignore
     except ImportError as e:  # pragma: no cover

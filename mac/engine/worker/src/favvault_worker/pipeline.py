@@ -33,7 +33,7 @@ def process_url(settings: Settings, db: StateDB, raw: str, folder: str | None = 
         item = db.update(item, folder=folder)
 
     item = run_item(settings, db, item)
-    if item.status == "failed" and retry_delay >= 0:
+    if item.status == "failed" and retry_delay >= 0 and "需要登录" not in (item.error or ""):
         log(f"failed at {item.stage}: {item.error}; retrying once in {int(retry_delay)}s", level="warn")
         emit("retry", delay=retry_delay)
         time.sleep(retry_delay)

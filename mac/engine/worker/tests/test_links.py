@@ -31,3 +31,28 @@ def test_pick_subtitle_prefers_zh_and_skips_danmaku_and_translations():
     assert download._pick_subtitles({"subtitles": {}, "automatic_captions": {}}) == []
     info3 = {"subtitles": {"zh-cn": [{"ext": "vtt", "url": "x.m3u8", "protocol": "m3u8_native"}]}}
     assert download._pick_subtitles(info3) == []
+
+
+def test_fetch_falls_back_to_browser_cookies(monkeypatch, tmp_path):
+    calls = []
+
+    def fake(url, out_dir, browser, cookies_file):
+        calls.append(browser)
+        if browser != "edge":
+            raise download.DownloadError("ERROR: [youtube] x: Sign in to confirm you're not a bot")
+        return "ok"
+
+    monkeypatch.setattr(download, "_fetch_once", fake)
+    monkeypatch.setenv("FAVVAULT_COOKIE_BROWSERS", "chrome,edge")
+    assert download.fetch("https://youtu.be/x", tmp_path, None, tmp_path / "c.txt") == "ok"
+    assert calls == [None, "chrome", "edge"]
+
+
+def test_fetch_douyin_does_not_use_browser(monkeypatch, tmp_path):
+    def fake(*a):
+        raise download.DownloadError("Sign in to confirm")
+    monkeypatch.setattr(download, "_fetch_once", fake)
+    monkeypatch.setenv("FAVVAULT_COOKIE_BROWSERS", "chrome")
+    import pytest
+    with pytest.raises(download.DownloadError):
+        download.fetch("https://v.douyin.com/abc/", tmp_path)

@@ -162,6 +162,9 @@ const STATUS_TEXT = { written: "已生成笔记", skipped: "已跳过", failed: 
 
 function friendlyError(msg) {
   const s = String(msg || "");
+  const site = s.match(/｜ 需要登录：(.+)$/);
+  if (site) return "网站要求登录验证：" + site[1];
+  if (/Sign in to confirm|not a bot/i.test(s)) return "网站要求登录验证（YouTube 人机验证），正在借用浏览器登录状态重试";
   const rules = [
     [/LLM API key is not set/i, "没有填写 API Key（设置 → AI 接口配置）"],
     [/LLM HTTP 401/i, "API Key 无效或已过期（401）"],
@@ -214,6 +217,11 @@ function formatEvent(ev, progressState = {}) {
       return ev.level === "warn" ? `  ⚠ ${friendlyError(ev.message)}\n` : "";
     case "subtitle":
       return `  ✓ 视频自带字幕（${ev.lang || "?"}，${ev.chars || 0} 字），跳过语音识别\n`;
+    case "cookie_browser": {
+      const names = { chrome: "Chrome", edge: "Edge", brave: "Brave", firefox: "Firefox", chromium: "Chromium", vivaldi: "Vivaldi", safari: "Safari" };
+      const n = names[ev.browser] || ev.browser;
+      return `  ↻ 借用 ${n} 里的登录状态重试${ev.browser === "safari" || ev.browser === "firefox" ? "" : "（第一次会弹出钥匙串授权，输入电脑密码并点「始终允许」）"}…\n`;
+    }
     case "retry":
       return `  ↻ 处理失败，${Math.round(ev.delay || 0)} 秒后自动重试一次…\n`;
     case "item_done": {
