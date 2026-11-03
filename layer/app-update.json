@@ -1,0 +1,12 @@
+{
+  "version": "0.2.15",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "ceb6accf7cae6a5df9af41e63ca72ab79c17270f7af270ab99549f6528771d21",
+  "size": 9957134,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.15/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.15",
+  "notes": "本地 Whisper 模型：Whisper 组件没装时显示「安装 Whisper 组件」按钮，装好后自动转换本地模型即可使用",
+  "publishedAt": "2026-11-03T08:28:00.233Z"
+}
