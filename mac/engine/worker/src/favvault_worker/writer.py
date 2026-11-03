@@ -10,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 
 ILLEGAL = re.compile(r'[\\/:*?"<>|#^\[\]\x00-\x1f]')
-PLATFORM_NAMES = {"douyin": "抖音", "xhs": "小红书"}
+PLATFORM_NAMES = {"douyin": "抖音", "xhs": "小红书", "bilibili": "B站", "youtube": "YouTube", "kuaishou": "快手",
+                  "xigua": "西瓜视频", "weibo": "微博", "tiktok": "TikTok", "vimeo": "Vimeo", "twitter": "X", "other": "视频"}
 
 
 def nfc(s: str) -> str:

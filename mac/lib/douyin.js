@@ -223,6 +223,8 @@ function isDouyinCookie(c) {
 }
 
 /** 从用户粘贴的分享文案/链接里提取 URL 与 aweme_id（短链没有 id 时 id 为空） */
+function isDouyinUrl(url) { return /(?:douyin\.com|iesdouyin\.com)/.test(String(url || "")); }
+
 function parseShareInput(text) {
   const m = String(text || "").match(/https?:\/\/[^\s，。！？、\u3000]+/);
   let url = m ? m[0].replace(/[).,;'"]+$/, "") : "";
@@ -237,5 +239,5 @@ function parseShareInput(text) {
 module.exports = {
   COLLECTION_PAGE_URL, COLLECTION_API_URL, COLLECTS_LIST_API_URL, COLLECTS_VIDEO_API_URL, CHROME_UA,
   buildFetchScript, pickTitle, toStoreItem, collectPaged, describeFailure,
-  hasSessionCookie, toNetscapeCookies, isDouyinCookie, parseShareInput,
+  hasSessionCookie, toNetscapeCookies, isDouyinCookie, parseShareInput, isDouyinUrl,
 };

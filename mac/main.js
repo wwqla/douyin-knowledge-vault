@@ -540,6 +540,36 @@ function workerSrcDir() {
   return path.join(dir, "src");
 }
 
+// yt-dlp 解析 YouTube 需要 JS 运行时：用应用自带的 Electron 充当 Node（ELECTRON_RUN_AS_NODE），不用另装
+function ensureNodeShim() {
+  const file = path.join(ENGINE_HOME, "bin", "dkv-node");
+  const body = `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${process.execPath}" "$@"\n`;
+  try {
+    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== body) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, body, { mode: 0o755 });
+    }
+    return file;
+  } catch { return ""; }
+}
+
+// 非抖音链接都靠 yt-dlp 解析，网站经常改版：每天第一次处理这类链接前顺手把 yt-dlp 升到最新（失败不影响继续）
+let ytdlpCheckedAt = 0;
+async function refreshYtDlp() {
+  const stamp = path.join(ENGINE_HOME, "var", "ytdlp-updated");
+  try { ytdlpCheckedAt = Math.max(ytdlpCheckedAt, fs.statSync(stamp).mtimeMs); } catch { /* 首次 */ }
+  if (Date.now() - ytdlpCheckedAt < 86400000 || !fs.existsSync(VENV_PY)) return;
+  ytdlpCheckedAt = Date.now();
+  sendLog("  ↻ 更新视频解析组件 yt-dlp（每天一次）…\n");
+  const env = { ...process.env, PATH: `${path.join(ENGINE_HOME, "bin")}:${os.homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ""}` };
+  const base = ["pip", "install", "-q", "-U", "--python", VENV_PY, "yt-dlp[default]"];
+  let r = await runCmd("uv", base, { env, timeout: 120000 });
+  if (r.code !== 0) r = await runCmd("uv", [...base, "--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple"], { env, timeout: 120000 });
+  if (r.code === 0) {
+    try { fs.mkdirSync(path.dirname(stamp), { recursive: true }); fs.writeFileSync(stamp, new Date().toISOString()); } catch { /* ignore */ }
+  } else sendLog("  ⚠ yt-dlp 更新失败，用现有版本继续\n");
+}
+
 function workerEnv(s) {
   return {
     ...process.env,
@@ -555,6 +585,7 @@ function workerEnv(s) {
     PYTHONUNBUFFERED: "1",
     PYTHONIOENCODING: "utf-8",
     HF_HUB_DISABLE_TELEMETRY: "1",
+    FAVVAULT_NODE: ensureNodeShim(),
     PATH: [path.join(ENGINE_HOME, "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
   };
 }
@@ -804,6 +835,7 @@ async function runBatch(keys, { label = "处理", scheduled = false } = {}) {
       let doneEv = null;
       let errEv = null;
       const args = ["process", it.url, "--folder", it.folder || "抖音收藏", "--cookies", COOKIES_FILE, "--retry-delay", "30"];
+      if (!it.aweme_id && !douyin.isDouyinUrl(it.url)) await refreshYtDlp();
       // 抖音视频：先用软件里已登录的抖音会话下载好文件，交给 worker（不再依赖 yt-dlp 解析抖音）
       if (it.aweme_id) {
         if (!detailCache[it.aweme_id]) {

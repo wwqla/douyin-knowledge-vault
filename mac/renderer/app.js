@@ -2682,9 +2682,11 @@ async function loadNewArrivals() {
 
 async function addVideos(processNow) {
   const raw = $("new-urls").value;
-  const urls = raw.split(/[\s,;，；]+/).map((s) => s.trim()).filter(Boolean);
+  // 分享文案里夹着中文，按链接提取；纯数字按抖音视频 ID 处理
+  const urls = [...(raw.match(/https?:\/\/[^\s，。！？、\u3000]+/g) || []),
+    ...raw.replace(/https?:\/\/[^\s，。！？、\u3000]+/g, " ").split(/[\s,;，；]+/).filter((t) => /^\d{6,30}$/.test(t))];
   const st = $("new-add-status");
-  if (!urls.length) { st.textContent = "请先粘贴至少一条抖音视频链接"; return; }
+  if (!urls.length) { st.textContent = "请先粘贴至少一条视频链接"; return; }
   st.textContent = processNow ? "正在添加并逐条转录处理（较慢，请稍候）…" : "正在加入待处理…";
   try {
     const res = await window.api.addVideos(settings, { urls, processNow });

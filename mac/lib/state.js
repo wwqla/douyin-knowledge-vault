@@ -212,6 +212,8 @@ function formatEvent(ev, progressState = {}) {
     case "log":
       if (ev.level === "error") return "";  // item_done 会给出最终错误
       return ev.level === "warn" ? `  ⚠ ${friendlyError(ev.message)}\n` : "";
+    case "subtitle":
+      return `  ✓ 视频自带字幕（${ev.lang || "?"}，${ev.chars || 0} 字），跳过语音识别\n`;
     case "retry":
       return `  ↻ 处理失败，${Math.round(ev.delay || 0)} 秒后自动重试一次…\n`;
     case "item_done": {

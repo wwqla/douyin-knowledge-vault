@@ -62,15 +62,20 @@ def run_item(settings: Settings, db: StateDB, item: Item) -> Item:
                                       settings.cookies_file)
             data.update({
                 "realId": info.item_id, "description": info.description, "tags": info.tags,
-                "duration": info.duration, "audio": str(info.audio_path),
+                "duration": info.duration, "audio": str(info.audio_path) if info.audio_path else "",
             })
+            if info.transcript:  # 视频自带字幕：直接用字幕，跳过下载音频和语音识别
+                data.update({"transcript": info.transcript, "asr": f"subtitle:{info.subtitle_lang}"})
+                nxt = "transcribed"
+            else:
+                nxt = "downloaded"
             item = db.update(item, title=info.title, author=info.author, published_at=info.published_at,
-                             url=info.url, data=data, status="downloaded", stage="downloaded", error=None)
+                             url=info.url, data=data, status=nxt, stage=nxt, error=None)
             ctype = classify_content(info.title, info.description, info.tags)
             if ctype:
                 _cleanup(settings, data)
                 raise Skip(f'contentType: "{ctype}"')
-            stage = "downloaded"
+            stage = nxt
 
         # 2. transcribe
         if stage == "downloaded":
