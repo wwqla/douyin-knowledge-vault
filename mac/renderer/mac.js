@@ -79,6 +79,13 @@
       if (modelBusy && modelBusyEngine === k) continue; // 进度由事件更新
       if (k === "whisper") renderWhisperChoice(e);
       const local = k === "whisper" ? e.localWhisperChoice : null;
+      if (local && btn && !e.mlx) {
+        setText("model-state-" + k, "本地模型 ✓ · 还差 Whisper 组件");
+        setBar("model-bar-" + k, 0);
+        setText("model-msg-" + k, "已找到本地模型，还需要安装一次 Whisper 组件（mlx-whisper，联网几分钟），不用再下载模型");
+        btn.hidden = false; btn.textContent = "安装 Whisper 组件"; btn.disabled = !e.installed || !!modelBusy; btn.classList.add("primary"); btn.dataset.act = "download";
+        continue;
+      }
       if (local && btn) {
         setText("model-state-" + k, "本地模型 ✓ · " + fmtSize(local.size));
         setBar("model-bar-" + k, 100);
@@ -209,7 +216,8 @@
     const r = await window.api.engineSetAsr(k);
     if (r && r.ok) { engine = r; renderEngine(); toast(`已切换到 ${ENGINE_NAMES[k]}`); const f = $m("set-whisper"); if (f) f.value = r.whisperModel || ""; }
     if (engine && engine.installed && !engine.asrReady) {
-      setText("model-msg", `切换后需要下载 ${ENGINE_NAMES[k]} 模型${engine[k === "sensevoice" ? "sensevoice" : "mlx"] ? "" : "（会先自动安装对应组件）"}，点对应的「下载」。`);
+      if (k === "whisper" && engine.localWhisperChoice) setText("model-msg", "已找到本地 Whisper 模型，点「安装 Whisper 组件」就能用。");
+      else setText("model-msg", `切换后需要下载 ${ENGINE_NAMES[k]} 模型${engine[k === "sensevoice" ? "sensevoice" : "mlx"] ? "" : "（会先自动安装对应组件）"}，点对应的「下载」。`);
     } else setText("model-msg", "");
     syncOverlay();
   }

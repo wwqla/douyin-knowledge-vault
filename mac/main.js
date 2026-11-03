@@ -701,6 +701,8 @@ async function downloadModel(engineKey) {
         if (ev.event === "progress" && ev.stage === "model_download" && ev.total) {
           const pct = Math.min(99, Math.floor((ev.done / ev.total) * 100));
           prog(pct, `正在下载 ${spec.label} 模型 ${(ev.done / 1048576).toFixed(0)} / ${(ev.total / 1048576).toFixed(0)} MB`);
+        } else if (ev.event === "stage" && ev.stage === "model_convert") {
+          prog(95, "正在把本地 Whisper 模型转换成 M 芯片格式（只需一次）…");
         } else if (ev.event === "log" && /downloading .* from (.*)/.test(ev.message || "")) {
           prog(1, "下载源：" + /from (.*)$/.exec(ev.message)[1]);
         }
