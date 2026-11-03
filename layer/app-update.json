@@ -1,0 +1,12 @@
+{
+  "version": "0.2.14",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "e7e4a869f7a6242c5593c1b3ba295c221e5cbe8223d0a1345f9d2e7efb9d83f7",
+  "size": 9956284,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.14/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.14",
+  "notes": "新增本地 Whisper 模型：自动识别 Hugging Face 缓存里已有的 Whisper 模型（如 openai/whisper-base），在「处理组件」里直接选用，首次转写时自动转换成 M 芯片格式，不用再下载 1.5 GB",
+  "publishedAt": "2026-11-03T08:09:21.754Z"
+}
