@@ -1,0 +1,12 @@
+{
+  "version": "0.2.16",
+  "electron": "33.4.11",
+  "bootstrap": 1,
+  "sha256": "0350c724dbc074e898772f0ab82ce115edddea1d6ce068b9b2584bca123314a1",
+  "size": 9965026,
+  "asarUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.16/app-update.asar",
+  "dmgUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/download/mac-v0.2.1/DouyinKnowledgeVault-0.2.1-mac-arm64.dmg",
+  "releaseUrl": "https://github.com/wwqla/douyin-knowledge-vault/releases/tag/mac-v0.2.16",
+  "notes": "支持其他平台的视频链接：「新增收藏」页可粘贴 B站、YouTube、快手、微博等链接；视频自带字幕时直接用字幕，没有再语音识别；yt-dlp 每天自动更新一次",
+  "publishedAt": "2026-11-03T08:41:44.780Z"
+}
