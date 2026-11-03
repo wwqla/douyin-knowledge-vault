@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld("api", {
   engineInstall: () => ipcRenderer.invoke("engine:install"),
   engineDownloadModel: (engine) => ipcRenderer.invoke("engine:downloadModel", engine),
   engineSetAsr: (engine) => ipcRenderer.invoke("engine:setAsr", engine),
+  engineSetWhisperModel: (model) => ipcRenderer.invoke("engine:setWhisperModel", model),
   engineRevealModels: (engine) => ipcRenderer.invoke("engine:revealModels", engine),
   engineChooseModelsDir: () => ipcRenderer.invoke("engine:chooseModelsDir"),
   engineResetModelsDir: () => ipcRenderer.invoke("engine:resetModelsDir"),

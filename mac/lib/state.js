@@ -156,6 +156,7 @@ const STAGE_TEXT = {
   extract: "🧠 AI 提炼知识",
   write: "📝 写入笔记",
   model_download: "⬇ 下载语音识别模型（只需一次，存到 Hugging Face 共享缓存）",
+  model_convert: "🔄 把本地 Whisper 模型转换成 M 芯片格式（只需一次）",
 };
 const STATUS_TEXT = { written: "已生成笔记", skipped: "已跳过", failed: "失败", media_frozen: "已跳过（无可用语音）" };
 

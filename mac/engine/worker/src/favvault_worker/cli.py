@@ -96,6 +96,13 @@ def cmd_download_model(args) -> int:
     files = spec["files"]
     try:
         path = transcribe.ensure_hf_model(repo, files)
+        if engine == "mlx":
+            from pathlib import Path as _P
+
+            from . import local_models
+
+            if local_models.model_format(_P(path)) != "mlx":  # a local transformers model: convert once
+                path = local_models.resolve_for_mlx(path, transcribe.hf_hub_cache())
     except Exception as e:  # noqa: BLE001
         emit("error", code="model_download", message=str(e))
         return 1

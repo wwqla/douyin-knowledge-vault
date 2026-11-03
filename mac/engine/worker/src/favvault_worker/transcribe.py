@@ -98,6 +98,13 @@ def transcribe(audio: Path, engine: str = "auto", model: str = "", language: str
 
         model = model or MLX_DEFAULT
         model_path = ensure_hf_model(model)
+        from . import local_models
+
+        if local_models.model_format(Path(model_path)) != "mlx":  # e.g. openai/whisper-base (transformers)
+            try:
+                model_path = local_models.resolve_for_mlx(model_path, hf_hub_cache())
+            except RuntimeError as e:
+                raise TranscribeError(str(e)) from e
         emit("stage", stage="transcribe")
         result = mlx_whisper.transcribe(
             str(audio), path_or_hf_repo=model_path, language=language,

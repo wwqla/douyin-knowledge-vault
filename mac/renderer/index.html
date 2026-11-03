@@ -408,7 +408,7 @@
               <span class="asr-label">识别引擎</span>
               <select id="asr-select" class="asr-select">
                 <option value="sensevoice">SenseVoice · 推荐中文，更快更准（约 230 MB）</option>
-                <option value="whisper">Whisper large-v3-turbo · 多语言（约 1.5 GB）</option>
+                <option value="whisper">Whisper · 多语言（可用已有的本地模型）</option>
               </select>
             </div>
             <div class="model-row" id="model-row-sensevoice">
@@ -417,7 +417,11 @@
               <div class="model-row-foot"><span class="engine-msg" id="model-msg-sensevoice"></span><button class="btn small" id="btn-model-sensevoice">下载</button></div>
             </div>
             <div class="model-row" id="model-row-whisper">
-              <div class="model-row-head"><span>Whisper large-v3-turbo</span><span class="engine-state" id="model-state-whisper">—</span></div>
+              <div class="model-row-head"><span id="model-title-whisper">Whisper large-v3-turbo</span><span class="engine-state" id="model-state-whisper">—</span></div>
+              <div class="asr-choice whisper-model-choice" id="whisper-model-choice" hidden>
+                <span class="asr-label">使用模型</span>
+                <select id="whisper-model-select" class="asr-select"></select>
+              </div>
               <div class="bar-track"><div class="bar-fill" id="model-bar-whisper"></div></div>
               <div class="model-row-foot"><span class="engine-msg" id="model-msg-whisper"></span><button class="btn small" id="btn-model-whisper">下载</button></div>
             </div>
@@ -587,7 +591,7 @@
           <label>每日处理条数（不含定时任务：仅限制在总览手动「开始处理收藏」时每次最多处理多少条；定时任务每天 500 条上限不受此影响）
             <input id="set-dailylimit" type="number" min="1" max="3000" step="1" placeholder="默认 100" />
           </label>
-          <label>Whisper 模型（仅在识别引擎选 Whisper 时使用；Hugging Face 仓库名，留空用默认 large-v3-turbo）
+          <label>Whisper 模型（仅在识别引擎选 Whisper 时使用；Hugging Face 仓库名或本地文件夹，留空用默认 large-v3-turbo；也可在「处理组件」里直接选本地模型）
             <input id="set-whisper" type="text" />
           </label>
           <div hidden>

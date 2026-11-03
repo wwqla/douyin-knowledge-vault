@@ -98,3 +98,48 @@ test("engineReady per engine", () => {
   assert.equal(asr.fmtSize(239549735), "228 MB");
   assert.equal(asr.fmtSize(1613979758), "1.5 GB");
 });
+
+// ---------- 本地 Whisper 模型 ----------
+{
+  const t = require("node:test");
+  const assert = require("node:assert");
+  const fs2 = require("fs"), os2 = require("os"), path2 = require("path");
+  const A = require("../lib/asr");
+  const mk = (root, repo, files, cfg) => {
+    const snap = path2.join(root, "models--" + repo.replace(/\//g, "--"), "snapshots", "abc");
+    fs2.mkdirSync(snap, { recursive: true });
+    fs2.writeFileSync(path2.join(snap, "config.json"), JSON.stringify(cfg));
+    for (const f of files) fs2.writeFileSync(path2.join(snap, f), "x".repeat(10));
+    return snap;
+  };
+  t.test("scanLocalWhisper finds transformers / mlx / ct2 models and flags usability", () => {
+    const root = fs2.mkdtempSync(path2.join(os2.tmpdir(), "hfc-"));
+    const hf = mk(root, "openai/whisper-base", ["model.safetensors"], { model_type: "whisper", num_mel_bins: 80 });
+    mk(root, "mlx-community/whisper-small-mlx", ["weights.npz"], { n_mels: 80 });
+    mk(root, "Systran/faster-whisper-base", ["model.bin"], { alignment_heads: [] });
+    mk(root, "openai/whisper-tiny", ["pytorch_model.bin"], { model_type: "whisper", num_mel_bins: 80 });
+    mk(root, "mlx-community/whisper-large-v3-turbo", ["weights.safetensors"], { n_mels: 128 });
+    mk(root, "other/bert", ["model.safetensors"], { model_type: "bert" });
+    const list = A.scanLocalWhisper(root);
+    const by = Object.fromEntries(list.map((m) => [m.repo, m]));
+    assert.equal(by["openai/whisper-base"].format, "hf");
+    assert.equal(by["openai/whisper-base"].usable, true);
+    assert.equal(by["mlx-community/whisper-small-mlx"].format, "mlx");
+    assert.equal(by["Systran/faster-whisper-base"].usable, false);
+    assert.equal(by["openai/whisper-tiny"].format, "hf-bin");
+    assert.ok(!by["mlx-community/whisper-large-v3-turbo"], "default model has its own row");
+    assert.ok(!by["other/bert"]);
+    assert.equal(A.localWhisperChoice("openai/whisper-base", list).path, hf);
+    assert.equal(A.localWhisperChoice(hf, list).repo, "openai/whisper-base");
+    assert.equal(A.localWhisperChoice("mlx-community/whisper-large-v3-turbo", list), null);
+    assert.equal(A.localWhisperChoice("", list), null);
+  });
+  t.test("engineReady accepts a usable local Whisper without the default download", () => {
+    const doc = { installed: true, mlx: true };
+    const models = { whisper: { downloaded: false } };
+    assert.equal(A.engineReady("whisper", doc, models, true, null), false);
+    assert.equal(A.engineReady("whisper", doc, models, true, { usable: true }), true);
+    assert.equal(A.engineReady("whisper", doc, models, true, { usable: false }), false);
+    assert.equal(A.engineReady("whisper", { installed: true, mlx: false }, models, true, { usable: true }), false);
+  });
+}

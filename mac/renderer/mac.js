@@ -77,6 +77,15 @@
       if (row) { row.classList.toggle("current", k === cur); row.hidden = k !== cur && !(m.downloaded); }
       const btn = $m("btn-model-" + k);
       if (modelBusy && modelBusyEngine === k) continue; // 进度由事件更新
+      if (k === "whisper") renderWhisperChoice(e);
+      const local = k === "whisper" ? e.localWhisperChoice : null;
+      if (local && btn) {
+        setText("model-state-" + k, "本地模型 ✓ · " + fmtSize(local.size));
+        setBar("model-bar-" + k, 100);
+        setText("model-msg-" + k, local.format === "hf" ? "Hugging Face 原版格式，首次转写时自动转换成 M 芯片格式（只需一次，几秒钟）" : local.path);
+        btn.hidden = false; btn.textContent = "在访达中显示"; btn.disabled = false; btn.classList.remove("primary"); btn.dataset.act = "reveal";
+        continue;
+      }
       const intelWhisper = k === "whisper" && e.isArm === false;
       const exp = m.expectedSize || (e.engines && e.engines[k] && e.engines[k].size) || 0;
       if (intelWhisper) {
@@ -109,6 +118,36 @@
     const rb = $m("btn-models-reset");
     if (rb) rb.hidden = !e.modelsDirCustom;
   }
+
+  function shortName(repo) { return String(repo || "").split("/").pop(); }
+  function renderWhisperChoice(e) {
+    const box = $m("whisper-model-choice");
+    const sel = $m("whisper-model-select");
+    const list = e.localWhisper || [];
+    const local = e.localWhisperChoice;
+    setText("model-title-whisper", local ? `Whisper ${shortName(local.repo)}（本地）` : "Whisper large-v3-turbo");
+    if (!box || !sel) return;
+    box.hidden = !e.isArm || !list.length;
+    if (box.hidden) return;
+    const def = e.whisperDefault || "mlx-community/whisper-large-v3-turbo";
+    const opts = [`<option value="${def}">large-v3-turbo · 默认（约 1.5 GB，需下载）</option>`];
+    for (const m of list) {
+      const note = m.usable ? `本地 · ${fmtSize(m.size)}` : (m.format === "ct2" ? "faster-whisper 格式，用不了" : "缺少 safetensors，用不了");
+      opts.push(`<option value="${m.repo.replace(/"/g, "&quot;")}"${m.usable ? "" : " disabled"}>${shortName(m.repo)} · ${note}</option>`);
+    }
+    if (sel.dataset.sig !== opts.join("")) { sel.innerHTML = opts.join(""); sel.dataset.sig = opts.join(""); }
+    sel.value = local ? local.repo : def;
+    sel.disabled = !!modelBusy;
+  }
+  document.addEventListener("change", async (ev) => {
+    if (!ev.target || ev.target.id !== "whisper-model-select") return;
+    const r = await window.api.engineSetWhisperModel(ev.target.value);
+    const f = $m("set-whisper");
+    if (f && r && r.ok) f.value = r.whisperModel || "";
+    if (r && r.ok) { engine = r; renderEngine(); toast(r.localWhisperChoice ? `已改用本地模型 ${shortName(r.localWhisperChoice.repo)}` : "已改用默认 Whisper 模型"); }
+    else { toast((r && r.error) || "切换失败", true); renderEngine(); }
+    syncOverlay();
+  });
 
   async function refreshEngine(cached) {
     try { engine = await window.api.engineStatus({ cached: !!cached }); } catch (err) { engine = { installed: false, error: String(err) }; }
@@ -168,7 +207,7 @@
   async function setAsr(k) {
     if (modelBusy) return;
     const r = await window.api.engineSetAsr(k);
-    if (r && r.ok) { engine = r; renderEngine(); toast(`已切换到 ${ENGINE_NAMES[k]}`); }
+    if (r && r.ok) { engine = r; renderEngine(); toast(`已切换到 ${ENGINE_NAMES[k]}`); const f = $m("set-whisper"); if (f) f.value = r.whisperModel || ""; }
     if (engine && engine.installed && !engine.asrReady) {
       setText("model-msg", `切换后需要下载 ${ENGINE_NAMES[k]} 模型${engine[k === "sensevoice" ? "sensevoice" : "mlx"] ? "" : "（会先自动安装对应组件）"}，点对应的「下载」。`);
     } else setText("model-msg", "");

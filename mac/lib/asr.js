@@ -131,12 +131,75 @@ function fmtSize(bytes) {
   return Math.round(bytes / 1024 ** 2) + " MB";
 }
 
+
+// ---------------- 本地 Whisper 模型（缓存里别的软件下好的，如 models--openai--whisper-base） ----------------
+function readJson(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } }
+
+/** 'mlx' | 'hf'（transformers，首次使用时自动转换）| 'hf-bin' | 'ct2' | '' */
+function whisperFormat(dir) {
+  const cfg = readJson(path.join(dir, "config.json"));
+  if (!cfg) return "";
+  const has = (f) => fileSize(path.join(dir, f)) > 0;
+  if ("n_mels" in cfg && (has("weights.safetensors") || has("weights.npz"))) return "mlx";
+  if (cfg.model_type === "whisper" || "num_mel_bins" in cfg) {
+    if (has("model.safetensors")) return "hf";
+    if (has("pytorch_model.bin")) return "hf-bin";
+  }
+  if (has("model.bin")) return "ct2";
+  return "";
+}
+
+function dirSize(dir) {
+  let n = 0;
+  try { for (const f of fs.readdirSync(dir)) n += fileSize(path.join(dir, f)); } catch { /* ignore */ }
+  return n;
+}
+
+/** 缓存里所有能给 M 芯片用的 Whisper 模型（不含默认的 large-v3-turbo，它有自己的一行） */
+function scanLocalWhisper(cacheDir) {
+  const out = [];
+  let names = [];
+  try { names = fs.readdirSync(cacheDir); } catch { return out; }
+  for (const n of names) {
+    if (!/^models--.+whisper/i.test(n)) continue;
+    const repo = n.slice("models--".length).replace(/--/g, "/");
+    if (repo === ENGINES.whisper.repo) continue;
+    const snaps = path.join(cacheDir, n, "snapshots");
+    let order = [];
+    try { order.push(fs.readFileSync(path.join(cacheDir, n, "refs", "main"), "utf8").trim()); } catch { /* 没有 refs */ }
+    try { order = order.concat(fs.readdirSync(snaps).filter((x) => !order.includes(x))); } catch { continue; }
+    for (const sn of order) {
+      const dir = path.join(snaps, sn);
+      const format = whisperFormat(dir);
+      if (!format) continue;
+      out.push({ repo, path: dir, format, usable: format === "mlx" || format === "hf", size: dirSize(dir) });
+      break;
+    }
+  }
+  return out.sort((a, b) => a.size - b.size);
+}
+
+/** 设置里的 whisperModel 是否指向一个本地可用模型（仓库名或文件夹） */
+function localWhisperChoice(whisperModel, local) {
+  const m = String(whisperModel || "").trim();
+  if (!m || m === ENGINES.whisper.repo) return null;
+  const hit = (local || []).find((x) => x.repo === m || x.path === m);
+  if (hit) return hit;
+  if (m.startsWith("/") || m.startsWith("~")) {
+    const dir = expandHome(m, os.homedir());
+    const format = whisperFormat(dir);
+    if (format) return { repo: path.basename(dir), path: dir, format, usable: format === "mlx" || format === "hf", size: dirSize(dir) };
+  }
+  return null;
+}
+
 /** 当前引擎是否可以直接转写：组件已装 + 模型已下载（Intel 的 Whisper 用 faster-whisper，首次转写时自动下载） */
-function engineReady(asrEngine, doc, models, isArm) {
+function engineReady(asrEngine, doc, models, isArm, localChoice) {
   if (!doc || !doc.installed) return false;
   const e = normEngine(asrEngine);
   if (e === "sensevoice") return !!(doc.sensevoice && models && models.sensevoice && models.sensevoice.downloaded);
   if (!isArm) return true;
+  if (localChoice) return !!(doc.mlx && localChoice.usable);
   return !!(doc.mlx && ((models && models.whisper && models.whisper.downloaded) || doc.whisperReady));
 }
 
@@ -145,4 +208,5 @@ module.exports = {
   resolveAsrEngine, normEngine, workerEngine, installExtras,
   hfHubCache, modelEnv, SHELL_PROBE, parseShellProbe,
   repoCacheDir, modelStatus, allModelStatus, fmtSize, engineReady,
+  whisperFormat, scanLocalWhisper, localWhisperChoice,
 };

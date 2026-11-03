@@ -511,7 +511,9 @@ function modelsInfo(s) {
   const dir = modelsCacheDir(s);
   const custom = !!(s.modelsDir && s.modelsDir.trim());
   const def = asr.hfHubCache(asr.modelEnv({}, process.env, shellHfEnv), os.homedir());
-  return { cacheDir: dir, custom, defaultDir: def, models: asr.allModelStatus(dir) };
+  const localWhisper = IS_ARM ? asr.scanLocalWhisper(dir) : [];
+  const localChoice = IS_ARM ? asr.localWhisperChoice(s.whisperModel, localWhisper) : null;
+  return { cacheDir: dir, custom, defaultDir: def, models: asr.allModelStatus(dir), localWhisper, localChoice };
 }
 
 function engineInstalled() {
@@ -718,7 +720,8 @@ async function downloadModel(engineKey) {
 }
 
 function asrReadyNow(s, doc) {
-  return asr.engineReady(s.asrEngine, doc, modelsInfo(s).models, IS_ARM);
+  const info = modelsInfo(s);
+  return asr.engineReady(s.asrEngine, doc, info.models, IS_ARM, info.localChoice);
 }
 
 /** 处理前检查：组件、模型、知识库、登录。返回中文错误或空串 */
@@ -975,12 +978,14 @@ ipcMain.handle("vault:graph", (_e, vaultPath) => vidx.graph(vaultPath || loadSet
 function engineStatusPayload(doc) {
   const s = loadSettings();
   const info = modelsInfo(s);
-  const asrReady = asr.engineReady(s.asrEngine, doc, info.models, IS_ARM);
+  const asrReady = asr.engineReady(s.asrEngine, doc, info.models, IS_ARM, info.localChoice);
   return {
     ok: true, ...doc, arch: process.arch, engineHome: ENGINE_HOME, installing, modelDownloading,
     asrEngine: s.asrEngine, asrReady,
     // 旧字段：当前引擎的模型是否就绪 / 是否需要单独下载
     whisperReady: asrReady, needsModel: s.asrEngine === "sensevoice" || IS_ARM,
+    whisperModel: s.whisperModel || "", whisperDefault: asr.ENGINES.whisper.repo,
+    localWhisper: info.localWhisper, localWhisperChoice: info.localChoice,
     isArm: IS_ARM, modelsDir: info.cacheDir, modelsDirCustom: info.custom, modelsDirDefault: info.defaultDir, models: info.models,
     engines: Object.fromEntries(asr.ENGINE_KEYS.map((k) => [k, { title: asr.ENGINES[k].title, label: asr.ENGINES[k].label, repo: asr.ENGINES[k].repo, size: asr.ENGINES[k].size }])),
   };
@@ -993,7 +998,25 @@ ipcMain.handle("engine:install", () => installEngine());
 ipcMain.handle("engine:downloadModel", (_e, engineKey) => downloadModel(engineKey));
 ipcMain.handle("engine:setAsr", async (_e, engineKey) => {
   if (!asr.ENGINE_KEYS.includes(engineKey)) return { ok: false, error: "未知的识别引擎" };
-  saveSettings({ asrEngine: engineKey });
+  const patch = { asrEngine: engineKey };
+  if (engineKey === "whisper" && IS_ARM) {
+    // 默认大模型没下载、又已经有能用的本地 Whisper：直接用本地的，免得再下 1.5 GB
+    const s0 = loadSettings();
+    const info = modelsInfo(s0);
+    const usable = info.localWhisper.filter((m) => m.usable);
+    if (!info.localChoice && !info.models.whisper.downloaded && usable.length) patch.whisperModel = usable[usable.length - 1].repo;
+  }
+  saveSettings(patch);
+  return engineStatusPayload(engineCache || await engineDoctor());
+});
+ipcMain.handle("engine:setWhisperModel", async (_e, model) => {
+  const m = String(model || "").trim() || asr.ENGINES.whisper.repo;
+  if (m !== asr.ENGINES.whisper.repo) {
+    const c = asr.localWhisperChoice(m, asr.scanLocalWhisper(modelsCacheDir(loadSettings())));
+    if (!c) return { ok: false, error: "找不到这个本地模型" };
+    if (!c.usable) return { ok: false, error: c.format === "ct2" ? "这是 faster-whisper 格式，M 芯片用不了" : "这个模型缺少 model.safetensors，无法使用" };
+  }
+  saveSettings({ whisperModel: m, asrEngine: "whisper" });
   return engineStatusPayload(engineCache || await engineDoctor());
 });
 ipcMain.handle("engine:revealModels", async (_e, engineKey) => {
